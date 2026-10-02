@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Samme udtryk som MKA's kælderliste: én kolonne til telefonen, store knapper. */
+:root {
+  --bg: #eceeed; --surface: #ffffff; --line: #d5d9d7; --fg: #1a1d1c; --muted: #5d6663;
+  --accent: #8b2f1e; --accent-fg: #ffffff; --accent-soft: #f3e3df;
+  --ok: #2c6e45; --warn: #8a5a00;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121413; --surface: #1c1f1e; --line: #2e3331; --fg: #eceeed; --muted: #9aa39f;
+    --accent: #d86b52; --accent-fg: #1a0c08; --accent-soft: #3a211b; --ok: #7fc89a; --warn: #e5b659; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.35; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 0 16px 56px; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); margin: 0 -16px; padding: 12px 16px 10px; display: grid; gap: 8px; }
+.titlerow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--font-display); font-size: 28px; text-transform: uppercase; margin: 0; }
+.sync { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.sync[data-state="saved"] .dot { background: var(--ok); }
+.sync[data-state="saving"] .dot { background: var(--warn); }
+.sync[data-state="error"] { color: var(--warn); }
+.sync[data-state="error"] .dot { background: var(--warn); }
+nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+nav a { flex: 0 0 auto; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
+nav a .n { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
+section { padding-top: 22px; scroll-margin-top: 100px; }
+h2 { font-family: var(--font-display); font-size: 24px; text-transform: uppercase; margin: 0 0 4px; }
+h3 { font-family: var(--font-display); font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 6px; }
+ul { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+main li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px 8px 8px; border-top: 1px solid var(--line); }
+main li:first-child { border-top: 0; }
+main li[data-on="1"] { background: var(--accent-soft); }
+.thumb { width: 52px; height: 52px; border-radius: 8px; background: #fff; border: 1px solid var(--line); overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.name { font-weight: 600; overflow-wrap: anywhere; }
+.meta { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.meta b { color: var(--fg); font-weight: 600; }
+.note { font-size: 13px; color: var(--warn); }
+.stepper { display: flex; gap: 4px; align-items: center; }
+.stepper button { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 24px; font-weight: 600; cursor: pointer; touch-action: manipulation; font-family: var(--font-body); }
+.stepper button.plus { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.stepper button:disabled { opacity: .35; }
+.stepper input { width: 46px; height: 44px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); font-family: var(--font-body); -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.done { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.done h2 { font-size: 20px; }
+.done ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.empty { margin-top: 22px; padding: 18px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); background: var(--surface); }
+footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
+.ghost { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 10px 16px; font: 15px var(--font-body); cursor: pointer; }
+.danger { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 10px; padding: 10px 16px; font: 600 15px var(--font-body); cursor: pointer; }
+.small { font-size: 13px; color: var(--muted); text-align: center; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="titlerow">
+      <h1>Kælderliste</h1>
+      <div class="sync" id="sync" data-state="idle"><span class="dot"></span><span id="synctext">Henter …</span></div>
+    </div>
+    <nav id="nav" aria-label="Leverandører"></nav>
+  </header>
+
+  <main id="main"><div class="empty">Henter varelisten …</div></main>
+
+  <div class="done" id="done" hidden>
+    <h2>Færdig med at tælle?</h2>
+    <ol>
+      <li>Gå til computeren og åbn leverandørens favoritliste i Chrome.</li>
+      <li>Tryk på den røde knap <b>Fyld kurv</b> nederst til højre.</li>
+      <li>Tjek kurven, og bestil som du plejer.</li>
+    </ol>
+  </div>
+
+  <footer id="foot" hidden>
+    <div id="resetIdle"><button class="ghost" id="resetBtn" type="button">Start ny optælling</button></div>
+    <div id="resetAsk" hidden>
+      <p class="small">Alle antal sættes til 0.</p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="danger" id="resetYes" type="button">Ja, nulstil</button>
+        <button class="ghost" id="resetNo" type="button">Fortryd</button>
+      </div>
+    </div>
+    <p class="small" id="updated"></p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  let varer = [];
+  const pending = {};      // id -> timer for gemning
+  let inFlight = 0;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const slug = s => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-');
+
+  function setSync(state, text) { $('sync').dataset.state = state; $('synctext').textContent = text; }
+
+  function leverandorer() {
+    const out = [];
+    varer.forEach(v => { if (!out.includes(v.leverandor)) out.push(v.leverandor); });
+    return out;
+  }
+  const antalFor = l => varer.filter(v => v.leverandor === l && v.antal > 0).length;
+
+  function renderNav() {
+    $('nav').innerHTML = leverandorer().map(l => `<a href="#${slug(l)}">${esc(l)}<span class="n">${antalFor(l)}</span></a>`).join('');
+  }
+
+  function render() {
+    if (!varer.length) { $('main').innerHTML = '<div class="empty">Der er ingen varer på listen endnu.</div>'; return; }
+    $('main').innerHTML = leverandorer().map(l => {
+      const mine = varer.filter(v => v.leverandor === l).sort((a, b) => a.sortering - b.sortering);
+      const kats = [];
+      mine.forEach(v => { if (!kats.includes(v.kategori)) kats.push(v.kategori); });
+      return `<section id="${slug(l)}"><h2>${esc(l)}</h2>` + kats.map(k => `<h3>${esc(k)}</h3><ul>` +
+        mine.filter(v => v.kategori === k).map(v => `
+          <li data-id="${esc(v.id)}" data-on="${v.antal > 0 ? 1 : 0}">
+            <div class="thumb">${v.billede ? `<img src="${esc(v.billede)}" alt="" loading="lazy">` : ''}</div>
+            <div>
+              <div class="name">${esc(v.navn)}</div>
+              <div class="meta"><b>${esc(v.enhed)}</b>${v.detalje ? ' · ' + esc(v.detalje) : ''}</div>
+              ${v.note ? `<div class="note">${esc(v.note)}</div>` : ''}
+            </div>
+            <div class="stepper">
+              <button class="minus" type="button" aria-label="Færre ${esc(v.navn)}" ${v.antal > 0 ? '' : 'disabled'}>−</button>
+              <input type="number" inputmode="numeric" min="0" max="999" placeholder="0" value="${v.antal > 0 ? v.antal : ''}" aria-label="Antal ${esc(v.navn)}">
+              <button class="plus" type="button" aria-label="Flere ${esc(v.navn)}">+</button>
+            </div>
+          </li>`).join('') + '</ul>').join('') + '</section>';
+    }).join('');
+    $('done').hidden = false;
+    $('foot').hidden = false;
+    renderNav();
+  }
+
+  function updateRow(v) {
+    const li = document.querySelector(`li[data-id="${CSS.escape(v.id)}"]`);
+    if (!li) return;
+    li.dataset.on = v.antal > 0 ? '1' : '0';
+    const inp = li.querySelector('input');
+    if (document.activeElement !== inp) inp.value = v.antal > 0 ? v.antal : '';
+    li.querySelector('.minus').disabled = v.antal <= 0;
+    renderNav();
+  }
+
+  function setAntal(id, n) {
+    const v = varer.find(x => x.id === id);
+    if (!v) return;
+    n = Math.max(0, Math.min(999, Math.round(Number(n) || 0)));
+    if (v.antal === n) return;
+    v.antal = n;
+    updateRow(v);
+    clearTimeout(pending[id]);
+    setSync('saving', 'Gemmer …');
+    pending[id] = setTimeout(() => save(id, n), 600);
+  }
+
+  function save(id, n) {
+    delete pending[id];
+    inFlight++;
+    google.script.run
+      .withSuccessHandler(() => {
+        inFlight--;
+        if (!inFlight && !Object.keys(pending).length) setSync('saved', 'Gemt');
+        $('updated').textContent = 'Sidst gemt ' + new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+      })
+      .withFailureHandler(() => {
+        inFlight--;
+        setSync('error', 'Ikke gemt – prøver igen');
+        pending[id] = setTimeout(() => save(id, varer.find(x => x.id === id).antal), 4000);
+      })
+      .gemAntal(id, n);
+  }
+
+  function load() {
+    google.script.run
+      .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', 'Klar'); })
+      .withFailureHandler(err => { setSync('error', 'Kunne ikke hente listen'); $('main').innerHTML = `<div class="empty">Listen kunne ikke hentes. Genindlæs siden. (${esc(err && err.message)})</div>`; })
+      .hentData();
+  }
+
+  $('main').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const li = b.closest('li'); if (!li) return;
+    const v = varer.find(x => x.id === li.dataset.id);
+    if (b.classList.contains('plus')) setAntal(v.id, v.antal + 1);
+    if (b.classList.contains('minus')) setAntal(v.id, v.antal - 1);
+  });
+  $('main').addEventListener('change', e => {
+    const li = e.target.closest('li');
+    if (li && e.target.tagName === 'INPUT') setAntal(li.dataset.id, e.target.value);
+  });
+  $('main').addEventListener('focusin', e => { if (e.target.tagName === 'INPUT') e.target.select(); });
+
+  $('resetBtn').onclick = () => { $('resetIdle').hidden = true; $('resetAsk').hidden = false; };
+  $('resetNo').onclick = () => { $('resetIdle').hidden = false; $('resetAsk').hidden = true; };
+  $('resetYes').onclick = () => {
+    $('resetIdle').hidden = false; $('resetAsk').hidden = true;
+    setSync('saving', 'Nulstiller …');
+    google.script.run
+      .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', 'Ny optælling startet'); })
+      .withFailureHandler(() => setSync('error', 'Kunne ikke nulstille – prøv igen'))
+      .nulstil();
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

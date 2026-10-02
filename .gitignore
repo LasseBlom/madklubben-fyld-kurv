@@ -1,0 +1,9 @@
+# Webapp-adressen giver adgang til at ændre optællingen – må ikke være offentlig
+google/webapp-adresse.txt
+*adresse*.txt
+
+# Drikkekort ligger kun lokalt
+drikkerkort/
+*.pdf
+
+.DS_Store
