@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.1.2
+// @version      0.2.0
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
 // @downloadURL  https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
 // @match        https://shop.carlsbergdanmark.dk/Favoritter/Favoritliste*
+// @match        https://www.smvwines.dk/kundecenter/favoritlister*
+// @match        https://b2b.philipsonwine.com/min-profil/mine-favoritter/produkter*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -19,14 +21,39 @@
   'use strict';
 
   /* ---------- Leverandører ----------
-   * Hver leverandør beskriver: navn (som i Google-arket), hvordan rækkerne
-   * på favoritlisten findes, og hvor kurven er. Sigurd Müller og Philipson
-   * tilføjes her senere.
+   * Hver leverandør beskriver: navn (som i Google-arket), hvordan rækkerne på
+   * favoritlisten findes, hvad der står i kurven, og hvor kurven er.
+   * Kolonnen "varenr" i arket er webshoppens varenummer – hos Philipson, hvor
+   * favoritlisten ikke viser varenumre, er det i stedet varens navn på listen.
    */
+  const normNavn = s => String(s || '').toLowerCase().normalize('NFKC')
+    .replace(/^\s*\d{4}\s+/, '')          // årgang ignoreres, så en ny årgang stadig matcher
+    .replace(/[“”"']/g, '').replace(/\s+/g, ' ').trim();
+  const erVarenr = v => /^\d{1,10}$/.test(String(v.varenr));
+  const erNavn = v => typeof v.varenr === 'string' && v.varenr.length >= 2 && v.varenr.length <= 150 && !/[<>]/.test(v.varenr);
+
+  // Den største forælder til et antalsfelt, der kun indeholder ét antalsfelt = varens "kort".
+  const kortFor = (input, selector) => {
+    let e = input;
+    while (e.parentElement && e.parentElement.querySelectorAll(selector).length === 1) e = e.parentElement;
+    return e;
+  };
+  // Læser "1.234,56 DKK"/"kr." eller et antal fra kurv-linket i toppen.
+  const kurvTekst = el => {
+    if (!el) return null;
+    const t = el.textContent.replace(/\s+/g, ' ');
+    const m = t.match(/([\d.]+,\d{2})\s*(DKK|kr\.)/);
+    if (m) return m[1] === '0,00' ? null : `${m[1]} ${m[2]}`;
+    const n = parseInt((t.match(/\d+/) || ['0'])[0], 10);
+    return n > 0 ? `${n} ${n === 1 ? 'vare' : 'varer'}` : null;
+  };
+
   const LEVERANDORER = {
     'shop.carlsbergdanmark.dk': {
       navn: 'Carlsberg',
       kurvUrl: '/Checkout',
+      gyldig: erVarenr,
+      noegle: v => String(v.varenr),
       // Én række pr. vare: antalsfelt + kurv-knap + "Varenr. 12345" i teksten.
       findRaekker() {
         const map = {};
@@ -41,10 +68,55 @@
         return map;
       },
       // Kurvens beløb står i et <span> øverst til højre ("0,00 kr.").
-      kurvBeloeb() {
-        const el = [...document.querySelectorAll('span')].find(e =>
-          /^[\d.]+,\d{2}\s*kr\.$/.test(e.textContent.trim()) && e.getBoundingClientRect().top < 80);
-        return el ? el.textContent.trim().replace(/\s*kr\.$/, '') : null;
+      kurvStatus() {
+        return kurvTekst([...document.querySelectorAll('span')].find(e =>
+          /^[\d.]+,\d{2}\s*kr\.$/.test(e.textContent.trim()) && e.getBoundingClientRect().top < 80));
+      },
+    },
+
+    'www.smvwines.dk': {
+      navn: 'Sigurd Müller',
+      kurvUrl: '/kurv',
+      gyldig: erVarenr,
+      noegle: v => String(v.varenr),
+      // Antalsfelter hedder Quantity1, Quantity2 …; varenummeret står som "Varenr: 123456" på kortet.
+      // Én fælles "Læg i kurv"-knap lægger alle udfyldte vine i kurven på én gang.
+      samlet: true,
+      findRaekker() {
+        const map = {};
+        document.querySelectorAll('input[name^="Quantity"]').forEach(input => {
+          const kort = kortFor(input, 'input[name^="Quantity"]');
+          const m = kort.textContent.match(/Varenr:\s*(\d+)/);
+          if (m && !map[m[1]]) map[m[1]] = { input };
+        });
+        return map;
+      },
+      samletKnap() {
+        return [...document.querySelectorAll('button, input[type="submit"]')]
+          .find(b => /^\s*læg i kurv\s*$/i.test(b.textContent || b.value || ''));
+      },
+      kurvStatus() { return kurvTekst(document.querySelector('a[href="/kurv"]')); },
+    },
+
+    'b2b.philipsonwine.com': {
+      navn: 'Philipson',
+      kurvUrl: '/kurv',
+      gyldig: erNavn,
+      noegle: v => normNavn(v.varenr),
+      // Felterne er forudfyldt med shoppens standardmængde (6, 12, 24 …) – vi overskriver kun dem, vi bruger.
+      findRaekker() {
+        const map = {};
+        document.querySelectorAll('input[name^="Quantity"]').forEach(input => {
+          const kort = kortFor(input, 'input[name^="Quantity"]');
+          const navn = (kort.innerText || '').split('\n').map(x => x.trim()).find(Boolean);
+          const knap = [...kort.querySelectorAll('button')].find(b => !/favorite/i.test(b.className));
+          const k = normNavn(navn);
+          if (k && knap && !map[k]) map[k] = { input, knap };
+        });
+        return map;
+      },
+      kurvStatus() {
+        return kurvTekst([...document.querySelectorAll('a')].find(a => /\/kurv\/?$/.test(a.getAttribute('href') || '')));
       },
     },
   };
@@ -56,7 +128,7 @@
    * Scriptet læser kun varenumre og knapper på favoritlisten, og det eneste,
    * det henter udefra, er optællingen (varenavne og antal). Det sender aldrig
    * noget fra webshoppen videre, rører aldrig kassen og bestiller aldrig.
-   * Data fra kælderlisten stoles ikke blindt på: varenumre skal være tal,
+   * Data fra kælderlisten stoles ikke blindt på: varenumre/navne valideres,
    * antal skal være 1-99, og store antal skal bekræftes.
    */
   const MAKS_ANTAL = 99;
@@ -163,7 +235,7 @@
     catch (e) { return vis(`<h2>Noget gik galt</h2><p class="err">${esc(e.message)}</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div><p><button class="link" id="skift" type="button">Skift kælderliste-adresse</button></p>`), bind({ igen: () => hent(url), luk, skift: () => visOpsaetning() }); }
 
     const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && Number(v.antal) > 0);
-    const ugyldige = alle.filter(v => !/^\d{1,10}$/.test(String(v.varenr)) || !Number.isInteger(Number(v.antal)) || Number(v.antal) > MAKS_ANTAL);
+    const ugyldige = alle.filter(v => !lev.gyldig(v) || !Number.isInteger(Number(v.antal)) || Number(v.antal) > MAKS_ANTAL);
     const varer = alle.filter(v => !ugyldige.includes(v)).map(v => Object.assign({}, v, { antal: Number(v.antal) }));
     const store = varer.filter(v => v.antal > STORT_ANTAL);
     const opd = data.opdateret ? new Date(data.opdateret).toLocaleString('da-DK', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : 'ukendt';
@@ -173,15 +245,14 @@
 
     const raekker = lev.findRaekker();
     if (!Object.keys(raekker).length) {
-      return vis(`<h2>Favoritlisten er ikke klar</h2><p>Siden er ikke færdig med at indlæse. Vent et øjeblik, og tryk igen.</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div>`), bind({ igen: () => hent(url), luk });
+      return vis(`<h2>Favoritlisten er ikke klar</h2><p>Åbn jeres favoritliste hos ${esc(lev.navn)}, og vent til den er færdig med at indlæse. Tryk så igen.</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div>`), bind({ igen: () => hent(url), luk });
     }
 
-    const beloeb = lev.kurvBeloeb();
-    const harVarer = beloeb && beloeb !== '0,00';
+    const iKurven = lev.kurvStatus();
     vis(`
       <h2>${varer.length} ${varer.length === 1 ? 'vare' : 'varer'} til ${esc(lev.navn)}</h2>
       <p class="small">${esc(data.restaurant || '')} · optælling sidst ændret ${esc(opd)}</p>
-      ${harVarer ? `<p class="warn">Der ligger allerede varer for ${esc(beloeb)} kr. i kurven. De bliver liggende – de nye lægges oveni.</p>` : ''}
+      ${iKurven ? `<p class="warn">Der ligger allerede ${esc(iKurven)} i kurven. De bliver liggende – de nye lægges oveni.</p>` : ''}
       ${store.length ? `<p class="warn">Usædvanligt stort antal: ${store.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek at det er rigtigt, før du fortsætter.</p>` : ''}
       ${ugyldige.length ? `<p class="err">${ugyldige.length} ${ugyldige.length === 1 ? 'vare' : 'varer'} på kælderlisten har ugyldige data og springes over: ${ugyldige.map(v => esc(v.navn)).join(', ')}.</p>` : ''}
       <ul>${varer.map(v => `<li data-id="${esc(v.id)}"><span>${esc(v.antal)} × ${esc(v.navn)} <span class="small">(${esc(v.enhed)})</span></span><span class="s">klar</span></li>`).join('')}</ul>
@@ -193,29 +264,51 @@
     Object.entries(handlers).forEach(([id, fn]) => { const el = rod.getElementById(id); if (el) el.onclick = fn; });
   }
 
-  /* ---------- Trin 3: læg i kurven, én vare ad gangen ---------- */
+  /* ---------- Trin 3: læg i kurven ---------- */
   async function fyld(varer) {
     rod.getElementById('go').disabled = true;
     rod.getElementById('luk').disabled = true;
     const raekker = lev.findRaekker();
-    const fejl = [];
-    for (const v of varer) {
+    const status = (v, s, t) => {
       const li = panel.querySelector(`li[data-id="${CSS.escape(v.id)}"]`);
-      const status = (s, t) => { li.dataset.s = s; li.querySelector('.s').textContent = t; };
-      const r = raekker[String(v.varenr)];
-      if (!r) { status('fejl', 'ikke på listen'); fejl.push(v); continue; }
-      status('', 'lægger i …');
-      r.input.scrollIntoView({ block: 'center' });
-      saetVaerdi(r.input, v.antal);
-      await vent(300);
-      r.knap.click();
-      await vent(2200);
-      status('ok', '✓');
+      li.dataset.s = s; li.querySelector('.s').textContent = t;
+    };
+    const fejl = varer.filter(v => !raekker[lev.noegle(v)]);
+    fejl.forEach(v => status(v, 'fejl', 'ikke på listen'));
+    const fundne = varer.filter(v => raekker[lev.noegle(v)]);
+
+    if (lev.samlet) {
+      // Udfyld alle felter (0 på resten), og tryk én gang på den fælles knap.
+      const knap = lev.samletKnap();
+      if (!knap) {
+        fundne.forEach(v => status(v, 'fejl', 'ingen knap'));
+        fejl.push(...fundne); fundne.length = 0;
+      } else {
+        const oensket = new Map(fundne.map(v => [raekker[lev.noegle(v)].input, v.antal]));
+        Object.values(raekker).forEach(r => saetVaerdi(r.input, oensket.get(r.input) || 0));
+        fundne.forEach(v => status(v, '', 'lægger i …'));
+        await vent(400);
+        knap.click();
+        await vent(3000);
+        fundne.forEach(v => status(v, 'ok', '✓'));
+      }
+    } else {
+      for (const v of fundne) {
+        const r = raekker[lev.noegle(v)];
+        status(v, '', 'lægger i …');
+        r.input.scrollIntoView({ block: 'center' });
+        saetVaerdi(r.input, v.antal);
+        await vent(300);
+        r.knap.click();
+        await vent(2500);
+        status(v, 'ok', '✓');
+      }
     }
-    const ok = varer.length - fejl.length;
+
+    const ok = fundne.length;
     const slut = panel.querySelector('.row');
     slut.outerHTML = `
-      ${fejl.length ? `<p class="err">${fejl.length} ${fejl.length === 1 ? 'vare' : 'varer'} kunne ikke findes på favoritlisten: ${fejl.map(v => esc(v.navn)).join(', ')}. Læg dem i kurven selv.</p>` : ''}
+      ${fejl.length ? `<p class="err">${fejl.length} ${fejl.length === 1 ? 'vare' : 'varer'} kunne ikke findes på favoritlisten: ${fejl.map(v => esc(v.navn)).join(', ')}. Læg dem i kurven selv – eller føj dem til favoritlisten, så klarer knappen dem næste gang.</p>` : ''}
       <p>${ok} ${ok === 1 ? 'vare er' : 'varer er'} lagt i kurven. Tjek kurven, og bestil som du plejer.</p>
       <div class="row"><a class="p" href="${esc(lev.kurvUrl)}">Gå til kurven</a><button class="g" id="luk" type="button">Luk</button></div>`;
     bind({ luk });

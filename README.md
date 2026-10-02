@@ -10,7 +10,15 @@ En gratis udgave af bestillingssystemet, der kan bruges af andre restauranter (f
 2. **Ved computeren:** de åbner leverandørens favoritliste i Chrome og trykker på den røde knap **Fyld kurv** nederst til højre. Varerne lægges i kurven.
 3. **De tjekker kurven og bestiller selv.** Knappen bestiller aldrig.
 
-Prøveversionen kan kun **Carlsberg**. Sigurd Müller og Philipson tilføjes, når Carlsberg virker.
+Knappen virker hos **Carlsberg**, **Philipson** og **Sigurd Müller** – på hver shops favoritliste:
+
+| Shop | Side med knappen | Sådan genkendes varen |
+|---|---|---|
+| Carlsberg | Favoritter → jeres liste | Varenummer |
+| Sigurd Müller | Kundecenter → Favoritlister → jeres liste (ikke "Vinkort") | Varenummer – alle vine lægges i kurven med ét klik |
+| Philipson | Mine favoritter → jeres liste | Varens navn på listen (årgang ignoreres) |
+
+Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den siger hvilke, så man kan tage dem selv.
 
 | Fil | Hvad |
 |---|---|
@@ -62,6 +70,5 @@ Varer med leverandør "Uden leverandør" vises på telefonsiden, men "Fyld kurv"
 ## Senere
 
 - **Nye versioner:** ret scriptet, hæv `@version` i toppen af `fyld-kurv.user.js`, og push til GitHub. Tampermonkey henter kun en ny version, når versionsnummeret er højere.
-- **Flere leverandører:** Sigurd Müller og Philipson tilføjes i `LEVERANDORER` i scriptet (opskrifterne kendes allerede fra MKA).
 - **Ny restaurant (fx LUPO):** eget Google Sheet + egen telefonside med deres varer; samme script.
-- **Varer** rettes direkte i arket "Varer" (én række pr. vare; `varenr` skal matche webshoppens varenummer).
+- **Varer** rettes direkte i arket "Varer" (én række pr. vare). `varenr` er webshoppens varenummer – hos Philipson varens navn præcis som på favoritlisten.
