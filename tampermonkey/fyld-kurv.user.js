@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.2.0
+// @version      0.2.1
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -68,9 +68,9 @@
         return map;
       },
       // Kurvens beløb står i et <span> øverst til højre ("0,00 kr.").
-      kurvStatus() {
-        return kurvTekst([...document.querySelectorAll('span')].find(e =>
-          /^[\d.]+,\d{2}\s*kr\.$/.test(e.textContent.trim()) && e.getBoundingClientRect().top < 80));
+      kurvElement() {
+        return [...document.querySelectorAll('span')].find(e =>
+          /^[\d.]+,\d{2}\s*kr\.$/.test(e.textContent.trim()) && e.getBoundingClientRect().top < 80);
       },
     },
 
@@ -95,7 +95,7 @@
         return [...document.querySelectorAll('button, input[type="submit"]')]
           .find(b => /^\s*læg i kurv\s*$/i.test(b.textContent || b.value || ''));
       },
-      kurvStatus() { return kurvTekst(document.querySelector('a[href="/kurv"]')); },
+      kurvElement() { return document.querySelector('a[href="/kurv"]'); },
     },
 
     'b2b.philipsonwine.com': {
@@ -115,14 +115,49 @@
         });
         return map;
       },
-      kurvStatus() {
-        return kurvTekst([...document.querySelectorAll('a')].find(a => /\/kurv\/?$/.test(a.getAttribute('href') || '')));
+      kurvElement() {
+        return [...document.querySelectorAll('a')].find(a => /\/kurv\/?$/.test(a.getAttribute('href') || ''));
+      },
+      // Kurvbeløbet i toppen opdateres langsomt hos Philipson. Bekræft i stedet via popuppen
+      // "Tilføjet til kurven": varen, der lige blev lagt i, står lige efter overskriften
+      // (længere nede viser popuppen andre varer, "Fyld kassen op" – dem ser vi bort fra).
+      bekraeftet(v) {
+        const t = (document.body.innerText || '').toLowerCase();
+        const i = t.search(/tilføjet til kurven/);
+        if (i < 0) return false;
+        let efter = t.slice(i + 'tilføjet til kurven'.length, i + 260);
+        const j = efter.search(/fyld kassen op|andre købte også/);
+        if (j >= 0) efter = efter.slice(0, j);
+        return normNavn(efter).includes(normNavn(v.varenr));
+      },
+      // Luk popuppen, så den næste vares bekræftelse ikke blandes med den forrige.
+      lukPopup() {
+        const titel = [...document.querySelectorAll('h1, h2, h3, h4, div, span')].find(e =>
+          e.offsetParent !== null && e.children.length <= 2 && /^\s*tilføjet til kurven\s*$/i.test(e.textContent));
+        let boks = titel, knap = null;
+        for (let n = 0; boks && n < 5 && !knap; n++, boks = boks.parentElement) {
+          knap = [...boks.querySelectorAll('button, a, [role="button"]')].find(b =>
+            b.offsetParent !== null && (/luk|close/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '')) || /^\s*[×✕]\s*$/.test(b.textContent)));
+        }
+        if (knap) knap.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       },
     },
   };
 
   const lev = LEVERANDORER[location.hostname];
   if (!lev) return;
+  lev.kurvStatus = () => kurvTekst(lev.kurvElement());
+  // "Fingeraftryk" af kurven i toppen af siden – ændrer sig, når webshoppen har taget imod en vare.
+  const kurvSignatur = () => { const el = lev.kurvElement(); return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; };
+  // Venter op til `ms` på bekræftelse: leverandørens egen bekræftelse af netop denne vare,
+  // ellers at kurven i toppen har ændret sig fra `foer`.
+  async function ventPaaBekraeftelse(v, foer, ms) {
+    for (let t = 0; t < ms; t += 300) {
+      await new Promise(r => setTimeout(r, 300));
+      if (lev.bekraeftet ? lev.bekraeftet(v) : kurvSignatur() !== foer) return true;
+    }
+    return false;
+  }
 
   /* ---------- Sikkerhed ----------
    * Scriptet læser kun varenumre og knapper på favoritlisten, og det eneste,
@@ -277,6 +312,7 @@
     fejl.forEach(v => status(v, 'fejl', 'ikke på listen'));
     const fundne = varer.filter(v => raekker[lev.noegle(v)]);
 
+    const ubekraeftet = [];
     if (lev.samlet) {
       // Udfyld alle felter (0 på resten), og tryk én gang på den fælles knap.
       const knap = lev.samletKnap();
@@ -288,28 +324,39 @@
         Object.values(raekker).forEach(r => saetVaerdi(r.input, oensket.get(r.input) || 0));
         fundne.forEach(v => status(v, '', 'lægger i …'));
         await vent(400);
+        const foer = kurvSignatur();
         knap.click();
-        await vent(3000);
-        fundne.forEach(v => status(v, 'ok', '✓'));
+        const ok = await ventPaaBekraeftelse(null, foer, 10000);
+        fundne.forEach(v => ok ? status(v, 'ok', '✓') : (status(v, 'fejl', 'ikke bekræftet'), ubekraeftet.push(v)));
       }
     } else {
+      // Én vare ad gangen – og kun ✓, når kurven i toppen faktisk har ændret sig.
       for (const v of fundne) {
         const r = raekker[lev.noegle(v)];
         status(v, '', 'lægger i …');
         r.input.scrollIntoView({ block: 'center' });
-        saetVaerdi(r.input, v.antal);
-        await vent(300);
-        r.knap.click();
-        await vent(2500);
-        status(v, 'ok', '✓');
+        let ok = false;
+        for (let forsoeg = 1; forsoeg <= 2 && !ok; forsoeg++) {
+          if (forsoeg === 2) status(v, '', 'prøver igen …');
+          saetVaerdi(r.input, v.antal);
+          await vent(400);
+          const foer = kurvSignatur();
+          r.knap.click();
+          ok = await ventPaaBekraeftelse(v, foer, 8000);
+        }
+        if (lev.lukPopup) { lev.lukPopup(); await vent(500); }
+        if (ok) status(v, 'ok', '✓');
+        else { status(v, 'fejl', 'ikke bekræftet'); ubekraeftet.push(v); }
+        await vent(800);
       }
     }
 
-    const ok = fundne.length;
+    const ok = fundne.length - ubekraeftet.length;
     const slut = panel.querySelector('.row');
     slut.outerHTML = `
+      ${ubekraeftet.length ? `<p class="err">${ubekraeftet.length} ${ubekraeftet.length === 1 ? 'vare' : 'varer'} kunne ikke bekræftes i kurven: ${ubekraeftet.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek kurven, og læg dem i selv, hvis de mangler.</p>` : ''}
       ${fejl.length ? `<p class="err">${fejl.length} ${fejl.length === 1 ? 'vare' : 'varer'} kunne ikke findes på favoritlisten: ${fejl.map(v => esc(v.navn)).join(', ')}. Læg dem i kurven selv – eller føj dem til favoritlisten, så klarer knappen dem næste gang.</p>` : ''}
-      <p>${ok} ${ok === 1 ? 'vare er' : 'varer er'} lagt i kurven. Tjek kurven, og bestil som du plejer.</p>
+      <p>${ok} ${ok === 1 ? 'vare er' : 'varer er'} bekræftet i kurven. Tjek kurven, og bestil som du plejer.</p>
       <div class="row"><a class="p" href="${esc(lev.kurvUrl)}">Gå til kurven</a><button class="g" id="luk" type="button">Luk</button></div>`;
     bind({ luk });
   }
