@@ -1,4 +1,5 @@
 /**
+ * @OnlyCurrentDoc
  * Fyld kurv – telefonside og data til Madklubbens varebestilling.
  *
  * Ligger som Google Apps Script bundet til et Google Sheet.
@@ -6,9 +7,14 @@
  * - ?format=json bruges af "Fyld kurv"-knappen i Chrome (Tampermonkey).
  *
  * Alt gemmes i arket "Varer": én række pr. vare, antal i kolonnen "antal".
+ *
+ * Sikkerhed: @OnlyCurrentDoc betyder, at scriptet kun har adgang til DETTE regneark,
+ * ikke til resten af ejerens Google Drev. Arket må kun indeholde varer og antal –
+ * aldrig navne, mailadresser, adgangskoder eller priser.
  */
 
 const RESTAURANT = 'MKA (prøve)';
+const MAKS_ANTAL = 99; // loft pr. vare – begrænser skaden, hvis nogen pjatter med telefonsiden
 const ARK = 'Varer';
 const KOLONNER = ['id', 'leverandor', 'kategori', 'navn', 'detalje', 'enhed', 'varenr', 'billede', 'note', 'sortering', 'antal', 'opdateret'];
 
@@ -28,7 +34,6 @@ const STARTVARER = [
 /** Kør én gang fra Apps Script-editoren. Opretter arket og lægger prøvevarerne ind. */
 function opsaet() {
   const ss = SpreadsheetApp.getActive();
-  PropertiesService.getScriptProperties().setProperty('ARK_ID', ss.getId());
   let ark = ss.getSheetByName(ARK);
   if (!ark) ark = ss.insertSheet(ARK);
   if (ark.getLastRow() === 0) {
@@ -43,9 +48,9 @@ function opsaet() {
 }
 
 function hentArk_() {
-  const id = PropertiesService.getScriptProperties().getProperty('ARK_ID');
-  if (!id) throw new Error('Kør opsaet() i Apps Script-editoren først.');
-  return SpreadsheetApp.openById(id).getSheetByName(ARK);
+  const ark = SpreadsheetApp.getActive().getSheetByName(ARK);
+  if (!ark) throw new Error('Kør opsaet() i Apps Script-editoren først.');
+  return ark;
 }
 
 /** Alle varer med antal. Bruges af både telefonsiden og "Fyld kurv". */
@@ -79,7 +84,8 @@ function hentData() {
 
 /** Gemmer antallet for én vare. Kaldes fra telefonsiden. */
 function gemAntal(id, antal) {
-  antal = Math.max(0, Math.min(999, Math.round(Number(antal) || 0)));
+  antal = Math.max(0, Math.min(MAKS_ANTAL, Math.round(Number(antal) || 0)));
+  if (typeof id !== 'string' || !/^[a-z0-9-]{1,60}$/.test(id)) throw new Error('Ugyldig vare.');
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {

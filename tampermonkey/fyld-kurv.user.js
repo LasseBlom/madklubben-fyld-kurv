@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.1.1
+// @version      0.1.2
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -51,6 +51,16 @@
 
   const lev = LEVERANDORER[location.hostname];
   if (!lev) return;
+
+  /* ---------- Sikkerhed ----------
+   * Scriptet læser kun varenumre og knapper på favoritlisten, og det eneste,
+   * det henter udefra, er optællingen (varenavne og antal). Det sender aldrig
+   * noget fra webshoppen videre, rører aldrig kassen og bestiller aldrig.
+   * Data fra kælderlisten stoles ikke blindt på: varenumre skal være tal,
+   * antal skal være 1-99, og store antal skal bekræftes.
+   */
+  const MAKS_ANTAL = 99;
+  const STORT_ANTAL = 30;
 
   /* ---------- Hjælpere ---------- */
   const vent = ms => new Promise(r => setTimeout(r, ms));
@@ -152,7 +162,10 @@
     try { data = await hentOptaelling(url); }
     catch (e) { return vis(`<h2>Noget gik galt</h2><p class="err">${esc(e.message)}</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div><p><button class="link" id="skift" type="button">Skift kælderliste-adresse</button></p>`), bind({ igen: () => hent(url), luk, skift: () => visOpsaetning() }); }
 
-    const varer = (data.varer || []).filter(v => v.leverandor === lev.navn && v.antal > 0);
+    const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && Number(v.antal) > 0);
+    const ugyldige = alle.filter(v => !/^\d{1,10}$/.test(String(v.varenr)) || !Number.isInteger(Number(v.antal)) || Number(v.antal) > MAKS_ANTAL);
+    const varer = alle.filter(v => !ugyldige.includes(v)).map(v => Object.assign({}, v, { antal: Number(v.antal) }));
+    const store = varer.filter(v => v.antal > STORT_ANTAL);
     const opd = data.opdateret ? new Date(data.opdateret).toLocaleString('da-DK', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : 'ukendt';
     if (!varer.length) {
       return vis(`<h2>Intet at bestille hos ${esc(lev.navn)}</h2><p>Der er ikke talt nogen ${esc(lev.navn)}-varer på kælderlisten.</p><p class="small">Sidst ændret: ${esc(opd)}</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
@@ -169,6 +182,8 @@
       <h2>${varer.length} ${varer.length === 1 ? 'vare' : 'varer'} til ${esc(lev.navn)}</h2>
       <p class="small">${esc(data.restaurant || '')} · optælling sidst ændret ${esc(opd)}</p>
       ${harVarer ? `<p class="warn">Der ligger allerede varer for ${esc(beloeb)} kr. i kurven. De bliver liggende – de nye lægges oveni.</p>` : ''}
+      ${store.length ? `<p class="warn">Usædvanligt stort antal: ${store.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek at det er rigtigt, før du fortsætter.</p>` : ''}
+      ${ugyldige.length ? `<p class="err">${ugyldige.length} ${ugyldige.length === 1 ? 'vare' : 'varer'} på kælderlisten har ugyldige data og springes over: ${ugyldige.map(v => esc(v.navn)).join(', ')}.</p>` : ''}
       <ul>${varer.map(v => `<li data-id="${esc(v.id)}"><span>${esc(v.antal)} × ${esc(v.navn)} <span class="small">(${esc(v.enhed)})</span></span><span class="s">klar</span></li>`).join('')}</ul>
       <div class="row"><button class="p" id="go" type="button">Læg i kurven</button><button class="g" id="luk" type="button">Annuller</button></div>`);
     bind({ go: () => fyld(varer), luk });

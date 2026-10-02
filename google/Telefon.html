@@ -137,7 +137,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
             </div>
             <div class="stepper">
               <button class="minus" type="button" aria-label="Færre ${esc(v.navn)}" ${v.antal > 0 ? '' : 'disabled'}>−</button>
-              <input type="number" inputmode="numeric" min="0" max="999" placeholder="0" value="${v.antal > 0 ? v.antal : ''}" aria-label="Antal ${esc(v.navn)}">
+              <input type="number" inputmode="numeric" min="0" max="99" placeholder="0" value="${v.antal > 0 ? v.antal : ''}" aria-label="Antal ${esc(v.navn)}">
               <button class="plus" type="button" aria-label="Flere ${esc(v.navn)}">+</button>
             </div>
           </li>`).join('') + '</ul>').join('') + '</section>';
@@ -160,7 +160,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   function setAntal(id, n) {
     const v = varer.find(x => x.id === id);
     if (!v) return;
-    n = Math.max(0, Math.min(999, Math.round(Number(n) || 0)));
+    n = Math.max(0, Math.min(99, Math.round(Number(n) || 0)));
     if (v.antal === n) return;
     v.antal = n;
     updateRow(v);
