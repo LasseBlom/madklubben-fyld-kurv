@@ -30,12 +30,23 @@ h1 { font-family: var(--font-display); font-size: 28px; text-transform: uppercas
 .sync[data-state="saving"] .dot { background: var(--warn); }
 .sync[data-state="error"] { color: var(--warn); }
 .sync[data-state="error"] .dot { background: var(--warn); }
-.tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; scrollbar-width: none; }
-.tabs::-webkit-scrollbar, nav::-webkit-scrollbar { display: none; }
-.tabs button { flex: 1 0 auto; white-space: nowrap; border: 0; background: none; color: var(--fg); border-radius: 9px; padding: 9px 12px; font: 700 18px var(--font-display); text-transform: uppercase; letter-spacing: .03em; cursor: pointer; touch-action: manipulation; }
-.tabs button .n { font: 500 13px var(--font-body); color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
-.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
-.tabs button[aria-selected="true"] .n { color: inherit; opacity: .85; }
+.vaelger { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; touch-action: manipulation; }
+.vaelger .lbl { font: 600 12px var(--font-body); text-transform: uppercase; letter-spacing: .08em; opacity: .8; }
+.vaelger .cur { flex: 1; font: 700 24px var(--font-display); text-transform: uppercase; letter-spacing: .02em; }
+.vaelger .cnt { font: 600 13px var(--font-body); opacity: .9; font-variant-numeric: tabular-nums; }
+.vaelger .chev { font-size: 18px; }
+nav::-webkit-scrollbar { display: none; }
+.menu { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; overflow-y: auto; }
+.menu-inner { width: 100%; max-width: 640px; background: var(--bg); border-radius: 0 0 16px 16px; padding: 14px 16px 18px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.menu-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.menu-top h2 { margin: 0; }
+.menu h3 { margin: 14px 0 6px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.grid button { text-align: left; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; touch-action: manipulation; min-height: 64px; }
+.grid button .t { display: block; font: 700 19px var(--font-display); text-transform: uppercase; letter-spacing: .02em; overflow-wrap: anywhere; }
+.grid button .s { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.grid button .s b { color: var(--accent); }
+.grid button[aria-current="true"] { border: 2px solid var(--accent); background: var(--accent-soft); }
 nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 nav a { flex: 0 0 auto; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
 nav a .n { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
@@ -77,9 +88,18 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
       <h1>Kælderliste</h1>
       <div class="sync" id="sync" data-state="idle"><span class="dot"></span><span id="synctext">Henter …</span></div>
     </div>
-    <div class="tabs" id="tabs" role="tablist" aria-label="Område" hidden></div>
+    <button class="vaelger" id="vaelger" type="button" aria-haspopup="dialog" aria-expanded="false" hidden>
+      <span class="lbl">Liste</span><span class="cur" id="cur"></span><span class="cnt" id="curN"></span><span class="chev" aria-hidden="true">▾</span>
+    </button>
     <nav id="nav" aria-label="Spring til"></nav>
   </header>
+
+  <div class="menu" id="menu" role="dialog" aria-modal="true" aria-label="Vælg liste" hidden>
+    <div class="menu-inner">
+      <div class="menu-top"><h2>Vælg liste</h2><button class="ghost" id="menuLuk" type="button">Luk</button></div>
+      <div id="menuIndhold"></div>
+    </div>
+  </div>
 
   <main id="main"><div class="empty">Henter varelisten …</div></main>
 
@@ -127,11 +147,25 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   function gemFane() { try { localStorage.setItem('omraade', omraade); } catch (e) {} }
   function hentFane() { try { return localStorage.getItem('omraade') || ''; } catch (e) { return ''; } }
 
+  // Listevælgeren: én stor knap med den valgte liste – menuen viser alle lister på én gang,
+  // samlet i grupper (lister med kun Multiline-varer under "Multiline", resten under "Drikkevarer").
+  const gruppeFor = o => { const lev = unikke(varer.filter(v => v.omraade === o).map(v => v.leverandor)); return lev.length === 1 && lev[0] === 'Multiline' ? 'Multiline' : 'Drikkevarer'; };
   function renderTabs() {
-    $('tabs').hidden = omraader.length < 2;
-    const x = $('tabs').scrollLeft;
-    $('tabs').innerHTML = omraader.map(o => `<button type="button" role="tab" data-o="${esc(o)}" aria-selected="${o === omraade}">${esc(o)}<span class="n">${talt(varer.filter(v => v.omraade === o)) || ''}</span></button>`).join('');
-    $('tabs').scrollLeft = x;
+    $('vaelger').hidden = omraader.length < 2;
+    const n = talt(varer.filter(v => v.omraade === omraade));
+    $('cur').textContent = omraade;
+    $('curN').textContent = n ? `${n} talt` : '';
+    const grupper = unikke(omraader.map(gruppeFor));
+    $('menuIndhold').innerHTML = grupper.map(g => `<h3>${esc(g)}</h3><div class="grid">` +
+      omraader.filter(o => gruppeFor(o) === g).map(o => {
+        const mine = varer.filter(v => v.omraade === o), t = talt(mine);
+        return `<button type="button" data-o="${esc(o)}" aria-current="${o === omraade}"><span class="t">${esc(o)}</span><span class="s">${mine.length} varer${t ? ` · <b>${t} talt</b>` : ''}</span></button>`;
+      }).join('') + '</div>').join('');
+  }
+  function visMenu(aaben) {
+    $('menu').hidden = !aaben;
+    $('vaelger').setAttribute('aria-expanded', String(aaben));
+    document.body.style.overflow = aaben ? 'hidden' : '';
   }
 
   // Har fanen flere leverandører, springer menuen mellem dem – ellers mellem kategorierne.
@@ -230,14 +264,18 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     const li = e.target.closest('li');
     if (li && e.target.tagName === 'INPUT') setAntal(li.dataset.id, e.target.value);
   });
-  $('tabs').addEventListener('click', e => {
-    const b = e.target.closest('button[data-o]'); if (!b || b.dataset.o === omraade) return;
+  $('vaelger').addEventListener('click', () => visMenu(true));
+  $('menuLuk').addEventListener('click', () => visMenu(false));
+  $('menu').addEventListener('click', e => {
+    if (e.target === $('menu')) return visMenu(false);          // tryk udenfor lukker
+    const b = e.target.closest('button[data-o]'); if (!b) return;
+    visMenu(false);
+    if (b.dataset.o === omraade) return;
     omraade = b.dataset.o; gemFane();
     $('resetIdle').hidden = false; $('resetAsk').hidden = true;
     render(); window.scrollTo(0, 0);
-    const valgt = $('tabs').querySelector('[aria-selected="true"]');
-    if (valgt) valgt.scrollIntoView({ block: 'nearest', inline: 'center' });
   });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('menu').hidden) visMenu(false); });
   $('main').addEventListener('focusin', e => { if (e.target.tagName === 'INPUT') e.target.select(); });
 
   $('resetBtn').onclick = () => { $('resetIdle').hidden = true; $('resetAsk').hidden = false; };
