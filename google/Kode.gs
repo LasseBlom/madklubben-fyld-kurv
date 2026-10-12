@@ -22,7 +22,7 @@ const ARK = 'Varer';
 // Nye kolonner tilføjes altid til sidst, så "antal" bliver i kolonne K.
 const KOLONNER = ['id', 'leverandor', 'kategori', 'navn', 'detalje', 'enhed', 'varenr', 'billede', 'note', 'sortering', 'antal', 'opdateret', 'omraade', 'liste'];
 // Fanerne på telefonsiden, i denne rækkefølge. Multilines faner står i Multiline.gs (ML_LISTER).
-const OMRAADER = ['Kælder', 'Gulv', 'Restaurant', 'Køkken', 'Takeaway', 'Emballage', 'Vakuumposer', 'Plastbøtter', 'Rengøring', 'Rengøringsartikler'];
+const OMRAADER = ['Kælder', 'Gulv', 'Restaurant', 'Køkken', 'Takeaway', 'Emballage', 'Vakuumposer', 'Plastbøtter', 'Rengøring', 'Rengøringsartikler', 'Andet'];
 
 // Prøvevarer fra MKA's favoritlister. opsaet() tilføjer dem, der mangler i arket – eksisterende rækker røres ikke.
 // Det 11. felt er området; mangler det, er varen i "Kælder". Multilines varer står i Multiline.gs.
@@ -136,7 +136,8 @@ function hentData() {
         liste: String(r[idx.liste] || ''),
       };
     });
-  return { restaurant: RESTAURANT, opdateret: senest, omraader: OMRAADER, varer: varer };
+  // samleLister: hos disse lister lægger knappen ALLE leverandørens talte varer i kurven.
+  return { restaurant: RESTAURANT, opdateret: senest, omraader: OMRAADER, samleLister: { Multiline: ML_SAMLET }, varer: varer };
 }
 
 /** Gemmer antallet for én vare. Kaldes fra telefonsiden. */

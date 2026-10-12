@@ -23,6 +23,8 @@ Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den s
 
 **Faner.** Telefonsiden har en fane pr. område (kolonnen `omraade` i arket): *Kælder* til drikkevarer og én fane pr. favoritliste hos Multiline (Gulv, Restaurant, Køkken, Takeaway, Emballage, Vakuumposer, Plastbøtter, Rengøring, Rengøringsartikler). "Start ny optælling" nulstiller kun den fane, man står på. Multilines lister og varer står i `google/Multiline.gs`; kolonnen `liste` er listens navn præcis som hos Multiline – knappen læser overskriften på den liste, man har åbnet, og lægger kun varerne fra den fane i kurven. Står samme vare på flere lister, har den en række pr. liste.
 
+**Samlelisten "MKA – ALLE VARER"** hos Multiline indeholder alle varerne fra favoritlisterne plus fanen *Andet* (varer fra købshistorikken, der ikke står på nogen favoritliste). Står man på samlelisten, lægger knappen **alle** talte Multiline-varer i kurven på én gang – uanset hvilken fane de er talt på. Er samme vare talt på flere faner, lægges antallene sammen. De enkelte lister virker stadig, hvis man kun vil bestille fra én.
+
 **Multiline genindlæser siden**, når man trykker "Add to Cart". Knappen husker derfor, hvad den sendte, og viser resultatet på den side, man lander på.
 
 | Fil | Hvad |

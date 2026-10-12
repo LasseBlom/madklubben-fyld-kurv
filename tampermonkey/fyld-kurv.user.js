@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.4.0
+// @version      0.5.0
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -109,7 +109,8 @@
       noegle: v => String(v.varenr),
       // Knappen vises kun på ordreskabeloner ("Order Templates"). Scriptet kører på hele shoppen,
       // fordi "Add to Cart" genindlæser siden – resultatet vises på den side, man lander på.
-      erListeside: () => /ViewOrderTemplate-View/.test(location.pathname),
+      erListeside: () => /ViewOrderTemplate-View$/.test(location.pathname),   // ikke oversigten (…-ViewAll)
+      knapVenstre: true,                                                       // chatboblen sidder nederst til højre
       // Hver favoritliste er en fane på telefonen. Listens navn (overskriften) skal stå præcis som
       // i kolonnen "liste" i arket – sådan vides det, hvilke varer der hører til denne side.
       listeNavne: () => [...document.querySelectorAll('h1')].map(h => normListe(h.textContent)).filter(Boolean),
@@ -243,7 +244,7 @@
 
   /* ---------- Brugerflade (i shadow DOM, så webshoppens CSS ikke blander sig) ---------- */
   const vaert = document.createElement('div');
-  vaert.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;';
+  vaert.style.cssText = `position:fixed;${lev.knapVenstre ? 'left' : 'right'}:20px;bottom:20px;z-index:2147483647;`;
   document.body.appendChild(vaert);
   const rod = vaert.attachShadow({ mode: 'open' });
   rod.innerHTML = `
@@ -318,6 +319,11 @@
     // Har leverandøren flere favoritlister (Multiline), tages kun varerne fra fanen for DENNE liste.
     let omr = null, liste = null;
     if (lev.listeNavne) {
+      const navne = lev.listeNavne();
+      const samle = normListe((data.samleLister || {})[lev.navn]);
+      if (samle && navne.includes(samle)) omr = 'alle lister';     // samlelisten: alle talte varer på én gang
+    }
+    if (lev.listeNavne && !omr) {
       const navne = lev.listeNavne();
       const v0 = (data.varer || []).find(v => v && v.leverandor === lev.navn && navne.includes(normListe(v.liste)));
       if (!v0) return vis(`<h2>Listen er ikke på kælderlisten</h2><p>Der er ingen fane på telefonsiden til listen <b>${esc(navne[0] || '?')}</b>. Er listen omdøbt hos ${esc(lev.navn)}, skal navnet også rettes i arket (kolonnen "liste").</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });

@@ -4,6 +4,10 @@
  * Multiline – det er sådan "Fyld kurv"-knappen ved, hvilke varer der hører til den side,
  * man står på. Omdøbes en liste hos Multiline, skal navnet rettes her (og i arket).
  *
+ * "MKA – ALLE VARER" (ML_SAMLET) er en samleliste med alle varerne: står man på den hos Multiline,
+ * lægger knappen ALLE talte Multiline-varer i kurven på én gang (samme varenummer lægges sammen).
+ * Fanen "Andet" er varer, der kun ligger på samlelisten (fundet i Multilines købshistorik).
+ *
  * Varer: [liste, varenr ("Item #"), enhedskode, pakning, navn, kategori, billedfil?, id?]
  * Samme varenummer to gange på samme liste (fx bagepapir 4899 i to udskæringer) får "#2".
  * Gulv og Takeaway har faste id'er fra første version, så optællinger bevares.
@@ -19,14 +23,18 @@ const ML_LISTER = {
   boetter:    ['Plastbøtter', 'plast bøtter'],
   rengoering: ['Rengøring', 'Favoritliste-Madklubben Rengøring.'],
   rengart:    ['Rengøringsartikler', 'Favorilitste - Madklubben Rengøringsartikler'],
+  andet:      ['Andet', 'MKA – ALLE VARER'],
 };
+
+// Samlelisten hos Multiline med alle varer fra listerne ovenfor + "Andet".
+const ML_SAMLET = 'MKA – ALLE VARER';
 
 const ML_KATEGORIER = ['Servietter', 'Lys', 'Bord & bar', 'Kasse & kontor', 'Batterier', 'Takeaway', 'Salatskåle', 'Suppe & kaffe',
   'Dressing', 'Bakker & låg', 'Termokasser', 'Bagepapir & folie', 'Poser & sække', 'Vakuumposer', 'Bøtter & dunke', 'Køkkenudstyr',
   'Handsker & beskyttelse', 'Klude & svampe', 'Rengøringsmidler', 'Opvask', 'Kaffemaskine', 'Ovn & grill', 'Toilet & hygiejne',
   'Redskaber', 'Affaldsskilte', 'Diverse'];
 
-const ML_ENHED = { CT: 'karton', PK: 'pakke', BK: 'pakke', EA: 'stk', BG: 'pose', SA: 'sæk', BJ: 'spand', CA: 'dunk', BO: 'flaske', PR: 'par' };
+const ML_ENHED = { CT: 'karton', PK: 'pakke', BK: 'pakke', BX: 'æske', EA: 'stk', BG: 'pose', SA: 'sæk', BJ: 'spand', CA: 'dunk', BO: 'flaske', PR: 'par' };
 
 const ML_VARER = [
   // Gulv
@@ -343,6 +351,27 @@ const ML_VARER = [
   ['rengoering', '9179', 'CT', '8 × 40 stk', 'Rengøringsklude Tork W8, røde', 'Klude & svampe'],
   ['rengoering', '128533', 'CT', '10 × 100 stk', 'Engangshandsker nitril, sorte S', 'Handsker & beskyttelse'],
   ['rengoering', '16224-1', 'EA', '', 'Fejeblad med kost, langt skaft', 'Redskaber'],
+
+  // Andet – købt før (Multilines købshistorik), men ikke på nogen favoritliste. Ligger kun på samlelisten.
+  ['andet', '142011', 'CT', '50 × 200 stk', 'Bøfspyd, bambus 9 cm', 'Bord & bar'],
+  ['andet', '3589-1', 'CT', '2 × 120 stk', 'Burgerboks 12×12 cm', 'Takeaway'],
+  ['andet', '144012', 'CT', '6 × 50 stk', 'Låg til salatskål Naturesse Ø150', 'Salatskåle'],
+  ['andet', '143121', 'BG', '24 stk', 'Plastbæger 600 ml, 13×13 cm', 'Bøtter & dunke'],
+  ['andet', '143120', 'BG', '24 stk', 'Låg til bæger 122893', 'Bøtter & dunke'],
+  ['andet', '143016', 'BG', '24 stk', 'Plastlåg til 1200 ml-bøtte', 'Bøtter & dunke'],
+  ['andet', '144633', 'BG', '24 stk', 'Plastbøtte 3100 ml, 19,5×19,5 cm', 'Bøtter & dunke'],
+  ['andet', '143018', 'BG', '24 stk', 'Plastbøtte 5000 ml, 19,5×19,5 cm', 'Bøtter & dunke'],
+  ['andet', '111476-1', 'EA', '', 'Plastflaske 350 ml med tud', 'Køkkenudstyr'],
+  ['andet', '144342', 'CT', '4 ruller', 'Strækfilm 44 cm × 300 m, pink', 'Bagepapir & folie'],
+  ['andet', '6701', 'CT', '20 × 10 stk', 'Affaldssække 100 l, kraftige 55 my', 'Poser & sække'],
+  ['andet', '114803', 'CT', '12 stk', 'Bloklys Ø50×120 (30 t)', 'Lys'],
+  ['andet', '13018', 'CT', '12 stk', 'Bloklys Ø70×180 (80 t)', 'Lys'],
+  ['andet', '144622', 'BX', '1 æske', 'Plaster Snøgg 6 cm × 4,5 m, blå', 'Handsker & beskyttelse'],
+  ['andet', '108949-1', 'CT', '15 × 600 ml', 'Hånddesinfektion gel 600 ml (pumpe)', 'Toilet & hygiejne'],
+  ['andet', '144645', 'CT', '3 × 5 l', 'Grundrens Kiilto C4 Max (fedt/olie)', 'Rengøringsmidler'],
+  ['andet', '142137', 'SA', '25 kg', 'Salttabletter til opvaskemaskine 25 kg', 'Opvask'],
+  ['andet', '19768', 'EA', '', 'Kost 41 cm, hvid', 'Redskaber'],
+  ['andet', '142622', 'CT', '6 stk', 'Vare 142622 (navn mangler hos Multiline)', 'Diverse'],
 ];
 
 /** Multilines varer som rækker til arket (samme kolonner som KOLONNER i Kode.gs). */
