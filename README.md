@@ -10,15 +10,20 @@ En gratis udgave af bestillingssystemet, der kan bruges af andre restauranter (f
 2. **Ved computeren:** de åbner leverandørens favoritliste i Chrome og trykker på den røde knap **Fyld kurv** nederst til højre. Varerne lægges i kurven.
 3. **De tjekker kurven og bestiller selv.** Knappen bestiller aldrig.
 
-Knappen virker hos **Carlsberg**, **Philipson** og **Sigurd Müller** – på hver shops favoritliste:
+Knappen virker hos **Carlsberg**, **Philipson**, **Sigurd Müller** og **Multiline** – på hver shops favoritliste:
 
 | Shop | Side med knappen | Sådan genkendes varen |
 |---|---|---|
 | Carlsberg | Favoritter → jeres liste | Varenummer |
 | Sigurd Müller | Kundecenter → Favoritlister → jeres liste (ikke "Vinkort") | Varenummer – alle vine lægges i kurven med ét klik |
 | Philipson | Mine favoritter → jeres liste | Varens navn på listen (årgang ignoreres) |
+| Multiline | My Account → Order Templates → jeres skabelon | Varenummer ("Item #", fx `101468-1`) – alle varer lægges i kurven med ét klik |
 
 Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den siger hvilke, så man kan tage dem selv.
+
+**Områder.** Telefonsiden har faner – *Kælder*, *Gulv* og *Køkken* (kolonnen `omraade` i arket). "Start ny optælling" nulstiller kun den fane, man står på. Hos Multiline har MKA en skabelon til gulvet ("GULV MKA 2026") og en til køkkenet ("KITCHEN …"); knappen læser skabelonens navn og lægger kun varerne fra den tilsvarende fane i kurven. Står samme vare i begge (servietter), har den en række pr. område.
+
+**Multiline genindlæser siden**, når man trykker "Add to Cart". Knappen husker derfor, hvad den sendte, og viser resultatet på den side, man lander på.
 
 | Fil | Hvad |
 |---|---|

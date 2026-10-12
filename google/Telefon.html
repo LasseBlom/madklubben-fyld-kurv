@@ -30,10 +30,16 @@ h1 { font-family: var(--font-display); font-size: 28px; text-transform: uppercas
 .sync[data-state="saving"] .dot { background: var(--warn); }
 .sync[data-state="error"] { color: var(--warn); }
 .sync[data-state="error"] .dot { background: var(--warn); }
+.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tabs button { border: 0; background: none; color: var(--fg); border-radius: 9px; padding: 9px 6px; font: 700 18px var(--font-display); text-transform: uppercase; letter-spacing: .03em; cursor: pointer; touch-action: manipulation; }
+.tabs button .n { font: 500 13px var(--font-body); color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
+.tabs button[aria-selected="true"] .n { color: inherit; opacity: .85; }
 nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 nav a { flex: 0 0 auto; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
 nav a .n { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
-section { padding-top: 22px; scroll-margin-top: 100px; }
+section, h3 { scroll-margin-top: 150px; }
+section { padding-top: 22px; }
 h2 { font-family: var(--font-display); font-size: 24px; text-transform: uppercase; margin: 0 0 4px; }
 h3 { font-family: var(--font-display); font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 6px; }
 ul { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -70,7 +76,8 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
       <h1>Kælderliste</h1>
       <div class="sync" id="sync" data-state="idle"><span class="dot"></span><span id="synctext">Henter …</span></div>
     </div>
-    <nav id="nav" aria-label="Leverandører"></nav>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Område" hidden></div>
+    <nav id="nav" aria-label="Spring til"></nav>
   </header>
 
   <main id="main"><div class="empty">Henter varelisten …</div></main>
@@ -78,7 +85,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   <div class="done" id="done" hidden>
     <h2>Færdig med at tælle?</h2>
     <ol>
-      <li>Gå til computeren og åbn leverandørens favoritliste i Chrome.</li>
+      <li>Gå til computeren og åbn bogmærkemappen <b>Bestil MKA</b> i Chrome (højreklik → Åbn alle).</li>
       <li>Tryk på den røde knap <b>Fyld kurv</b> nederst til højre.</li>
       <li>Tjek kurven, og bestil som du plejer.</li>
     </ol>
@@ -87,7 +94,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   <footer id="foot" hidden>
     <div id="resetIdle"><button class="ghost" id="resetBtn" type="button">Start ny optælling</button></div>
     <div id="resetAsk" hidden>
-      <p class="small">Alle antal sættes til 0.</p>
+      <p class="small" id="resetText">Alle antal sættes til 0.</p>
       <div style="display:flex;gap:8px;justify-content:center">
         <button class="danger" id="resetYes" type="button">Ja, nulstil</button>
         <button class="ghost" id="resetNo" type="button">Fortryd</button>
@@ -100,6 +107,8 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 <script>
 (function () {
   let varer = [];
+  let omraader = [];
+  let omraade = '';         // valgt fane
   const pending = {};      // id -> timer for gemning
   let inFlight = 0;
 
@@ -109,24 +118,38 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 
   function setSync(state, text) { $('sync').dataset.state = state; $('synctext').textContent = text; }
 
-  function leverandorer() {
-    const out = [];
-    varer.forEach(v => { if (!out.includes(v.leverandor)) out.push(v.leverandor); });
-    return out;
-  }
-  const antalFor = l => varer.filter(v => v.leverandor === l && v.antal > 0).length;
+  const unikke = arr => arr.filter((x, i) => arr.indexOf(x) === i);
+  const iOmraade = () => varer.filter(v => v.omraade === omraade).sort((a, b) => a.sortering - b.sortering);
+  const leverandorer = () => unikke(iOmraade().map(v => v.leverandor));
+  const talt = liste => liste.filter(v => v.antal > 0).length;
 
+  function gemFane() { try { localStorage.setItem('omraade', omraade); } catch (e) {} }
+  function hentFane() { try { return localStorage.getItem('omraade') || ''; } catch (e) { return ''; } }
+
+  function renderTabs() {
+    $('tabs').hidden = omraader.length < 2;
+    $('tabs').innerHTML = omraader.map(o => `<button type="button" role="tab" data-o="${esc(o)}" aria-selected="${o === omraade}">${esc(o)}<span class="n">${talt(varer.filter(v => v.omraade === o)) || ''}</span></button>`).join('');
+  }
+
+  // Har fanen flere leverandører, springer menuen mellem dem – ellers mellem kategorierne.
   function renderNav() {
-    $('nav').innerHTML = leverandorer().map(l => `<a href="#${slug(l)}">${esc(l)}<span class="n">${antalFor(l)}</span></a>`).join('');
+    renderTabs();
+    const lev = leverandorer();
+    const mine = iOmraade();
+    $('nav').innerHTML = lev.length > 1
+      ? lev.map(l => `<a href="#${slug(l)}">${esc(l)}<span class="n">${talt(mine.filter(v => v.leverandor === l))}</span></a>`).join('')
+      : unikke(mine.map(v => v.kategori)).map(k => `<a href="#${slug(lev[0] + '-' + k)}">${esc(k)}<span class="n">${talt(mine.filter(v => v.kategori === k))}</span></a>`).join('');
   }
 
   function render() {
     if (!varer.length) { $('main').innerHTML = '<div class="empty">Der er ingen varer på listen endnu.</div>'; return; }
+    omraader = unikke(omraader.concat(varer.map(v => v.omraade))).filter(o => varer.some(v => v.omraade === o));
+    if (!omraader.includes(omraade)) omraade = omraader.includes(hentFane()) ? hentFane() : omraader[0];
+    $('resetText').textContent = `Alle antal under ${omraade} sættes til 0. De andre faner røres ikke.`;
     $('main').innerHTML = leverandorer().map(l => {
-      const mine = varer.filter(v => v.leverandor === l).sort((a, b) => a.sortering - b.sortering);
-      const kats = [];
-      mine.forEach(v => { if (!kats.includes(v.kategori)) kats.push(v.kategori); });
-      return `<section id="${slug(l)}"><h2>${esc(l)}</h2>` + kats.map(k => `<h3>${esc(k)}</h3><ul>` +
+      const mine = iOmraade().filter(v => v.leverandor === l);
+      const kats = unikke(mine.map(v => v.kategori));
+      return `<section id="${slug(l)}"><h2>${esc(l)}</h2>` + kats.map(k => `<h3 id="${slug(l + '-' + k)}">${esc(k)}</h3><ul>` +
         mine.filter(v => v.kategori === k).map(v => `
           <li data-id="${esc(v.id)}" data-on="${v.antal > 0 ? 1 : 0}">
             <div class="thumb">${v.billede ? `<img src="${esc(v.billede)}" alt="" loading="lazy">` : ''}</div>
@@ -188,7 +211,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 
   function load() {
     google.script.run
-      .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', 'Klar'); })
+      .withSuccessHandler(data => { varer = data.varer || []; omraader = data.omraader || []; render(); setSync('saved', 'Klar'); })
       .withFailureHandler(err => { setSync('error', 'Kunne ikke hente listen'); $('main').innerHTML = `<div class="empty">Listen kunne ikke hentes. Genindlæs siden. (${esc(err && err.message)})</div>`; })
       .hentData();
   }
@@ -204,6 +227,12 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     const li = e.target.closest('li');
     if (li && e.target.tagName === 'INPUT') setAntal(li.dataset.id, e.target.value);
   });
+  $('tabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-o]'); if (!b || b.dataset.o === omraade) return;
+    omraade = b.dataset.o; gemFane();
+    $('resetIdle').hidden = false; $('resetAsk').hidden = true;
+    render(); window.scrollTo(0, 0);
+  });
   $('main').addEventListener('focusin', e => { if (e.target.tagName === 'INPUT') e.target.select(); });
 
   $('resetBtn').onclick = () => { $('resetIdle').hidden = true; $('resetAsk').hidden = false; };
@@ -212,9 +241,9 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     $('resetIdle').hidden = false; $('resetAsk').hidden = true;
     setSync('saving', 'Nulstiller …');
     google.script.run
-      .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', 'Ny optælling startet'); })
+      .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', `Ny optælling: ${omraade}`); })
       .withFailureHandler(() => setSync('error', 'Kunne ikke nulstille – prøv igen'))
-      .nulstil();
+      .nulstil(omraade);
   };
 
   load();

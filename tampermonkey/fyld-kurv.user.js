@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.2.1
+// @version      0.3.0
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -9,6 +9,7 @@
 // @match        https://shop.carlsbergdanmark.dk/Favoritter/Favoritliste*
 // @match        https://www.smvwines.dk/kundecenter/favoritlister*
 // @match        https://b2b.philipsonwine.com/min-profil/mine-favoritter/produkter*
+// @match        https://butik.multiline.dk/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -30,6 +31,7 @@
     .replace(/^\s*\d{4}\s+/, '')          // årgang ignoreres, så en ny årgang stadig matcher
     .replace(/[“”"']/g, '').replace(/\s+/g, ' ').trim();
   const erVarenr = v => /^\d{1,10}$/.test(String(v.varenr));
+  const erVarenrMedVariant = v => /^\d{1,10}(-\d{1,3})?$/.test(String(v.varenr));   // Multiline: "101468-1"
   const erNavn = v => typeof v.varenr === 'string' && v.varenr.length >= 2 && v.varenr.length <= 150 && !/[<>]/.test(v.varenr);
 
   // Den største forælder til et antalsfelt, der kun indeholder ét antalsfelt = varens "kort".
@@ -98,6 +100,45 @@
       kurvElement() { return document.querySelector('a[href="/kurv"]'); },
     },
 
+    'butik.multiline.dk': {
+      navn: 'Multiline',
+      kurvUrl: '/',
+      gyldig: erVarenrMedVariant,
+      noegle: v => String(v.varenr),
+      // Knappen vises kun på ordreskabeloner ("Order Templates"). Scriptet kører på hele shoppen,
+      // fordi "Add to Cart" genindlæser siden – resultatet vises på den side, man lander på.
+      erListeside: () => /ViewOrderTemplate-View/.test(location.pathname),
+      // MKA har to skabeloner – gulv og køkken. Skabelonens navn afgør, hvilken fane på telefonen der bruges.
+      omraade() {
+        const h = (document.querySelector('h1') || {}).textContent || '';
+        if (/gulv|floor/i.test(h)) return 'Gulv';
+        if (/køkken|kokken|kitchen/i.test(h)) return 'Køkken';
+        return null;
+      },
+      samlet: true,
+      genindlaeser: true,
+      // Antalsfelterne hedder DesiredQuantity_…; varenummeret står som "Item # 101468-1" på rækken.
+      findRaekker() {
+        const map = {};
+        document.querySelectorAll('input[name^="DesiredQuantity_"]').forEach(input => {
+          const kort = kortFor(input, 'input[name^="DesiredQuantity_"]');
+          const m = kort.textContent.match(/Item #\s*(\d+(?:-\d+)?)/);
+          if (m && !map[m[1]]) map[m[1]] = { input };
+        });
+        return map;
+      },
+      samletKnap() { return document.querySelector('button[name="AddToBasket"]'); },
+      kurvElement() {
+        return [...document.querySelectorAll('a[href]')].find(a => /\/cart\/?$/i.test(new URL(a.href, location.href).pathname));
+      },
+      // Kurven i toppen viser "19kr. 1,734.37" = antal linjer + beløb.
+      kurvStatus() {
+        const el = this.kurvElement();
+        const m = el && el.textContent.replace(/\s+/g, ' ').match(/(\d+)\s*kr\.\s*([\d.,]+)/);
+        return m && Number(m[1]) > 0 ? `${m[1]} ${m[1] === '1' ? 'vare' : 'varer'} (kr. ${m[2]})` : null;
+      },
+    },
+
     'b2b.philipsonwine.com': {
       navn: 'Philipson',
       kurvUrl: '/kurv',
@@ -146,7 +187,9 @@
 
   const lev = LEVERANDORER[location.hostname];
   if (!lev) return;
-  lev.kurvStatus = () => kurvTekst(lev.kurvElement());
+  if (!lev.kurvStatus) lev.kurvStatus = () => kurvTekst(lev.kurvElement());
+  const paaListe = lev.erListeside ? lev.erListeside() : true;
+  const kurvHref = () => { const el = lev.kurvElement(); return (el && el.href) || lev.kurvUrl; };
   // "Fingeraftryk" af kurven i toppen af siden – ændrer sig, når webshoppen har taget imod en vare.
   const kurvSignatur = () => { const el = lev.kurvElement(); return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; };
   // Venter op til `ms` på bekræftelse: leverandørens egen bekræftelse af netop denne vare,
@@ -235,9 +278,11 @@
   const fab = rod.getElementById('fab');
   const panel = rod.getElementById('panel');
   const vis = html => { panel.innerHTML = html; panel.hidden = false; fab.hidden = true; };
-  const luk = () => { panel.hidden = true; fab.hidden = false; };
+  const luk = () => { panel.hidden = true; fab.hidden = !paaListe; };
 
+  fab.hidden = !paaListe;
   fab.addEventListener('click', start);
+  visAfventende();
 
   /* ---------- Trin 1: kend kælderlisten ---------- */
   function start() {
@@ -269,13 +314,18 @@
     try { data = await hentOptaelling(url); }
     catch (e) { return vis(`<h2>Noget gik galt</h2><p class="err">${esc(e.message)}</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div><p><button class="link" id="skift" type="button">Skift kælderliste-adresse</button></p>`), bind({ igen: () => hent(url), luk, skift: () => visOpsaetning() }); }
 
-    const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && Number(v.antal) > 0);
+    let omr = null;
+    if (lev.omraade) {
+      omr = lev.omraade();
+      if (!omr) return vis(`<h2>Hvilken liste er det?</h2><p>Knappen kan ikke se, om det er gulv- eller køkkenlisten. Listens navn skal indeholde <b>GULV</b> eller <b>KITCHEN</b>/<b>KØKKEN</b>.</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
+    }
+    const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && (!omr || (v.omraade || 'Kælder') === omr) && Number(v.antal) > 0);
     const ugyldige = alle.filter(v => !lev.gyldig(v) || !Number.isInteger(Number(v.antal)) || Number(v.antal) > MAKS_ANTAL);
     const varer = alle.filter(v => !ugyldige.includes(v)).map(v => Object.assign({}, v, { antal: Number(v.antal) }));
     const store = varer.filter(v => v.antal > STORT_ANTAL);
     const opd = data.opdateret ? new Date(data.opdateret).toLocaleString('da-DK', { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : 'ukendt';
     if (!varer.length) {
-      return vis(`<h2>Intet at bestille hos ${esc(lev.navn)}</h2><p>Der er ikke talt nogen ${esc(lev.navn)}-varer på kælderlisten.</p><p class="small">Sidst ændret: ${esc(opd)}</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
+      return vis(`<h2>Intet at bestille hos ${esc(lev.navn)}${omr ? ' – ' + esc(omr) : ''}</h2><p>Der er ikke talt nogen ${esc(lev.navn)}-varer${omr ? ' under ' + esc(omr) : ''} på kælderlisten.</p><p class="small">Sidst ændret: ${esc(opd)}</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
     }
 
     const raekker = lev.findRaekker();
@@ -285,14 +335,14 @@
 
     const iKurven = lev.kurvStatus();
     vis(`
-      <h2>${varer.length} ${varer.length === 1 ? 'vare' : 'varer'} til ${esc(lev.navn)}</h2>
+      <h2>${varer.length} ${varer.length === 1 ? 'vare' : 'varer'} til ${esc(lev.navn)}${omr ? ' – ' + esc(omr) : ''}</h2>
       <p class="small">${esc(data.restaurant || '')} · optælling sidst ændret ${esc(opd)}</p>
       ${iKurven ? `<p class="warn">Der ligger allerede ${esc(iKurven)} i kurven. De bliver liggende – de nye lægges oveni.</p>` : ''}
       ${store.length ? `<p class="warn">Usædvanligt stort antal: ${store.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek at det er rigtigt, før du fortsætter.</p>` : ''}
       ${ugyldige.length ? `<p class="err">${ugyldige.length} ${ugyldige.length === 1 ? 'vare' : 'varer'} på kælderlisten har ugyldige data og springes over: ${ugyldige.map(v => esc(v.navn)).join(', ')}.</p>` : ''}
       <ul>${varer.map(v => `<li data-id="${esc(v.id)}"><span>${esc(v.antal)} × ${esc(v.navn)} <span class="small">(${esc(v.enhed)})</span></span><span class="s">klar</span></li>`).join('')}</ul>
       <div class="row"><button class="p" id="go" type="button">Læg i kurven</button><button class="g" id="luk" type="button">Annuller</button></div>`);
-    bind({ go: () => fyld(varer), luk });
+    bind({ go: () => fyld(varer, omr), luk });
   }
 
   function bind(handlers) {
@@ -300,7 +350,7 @@
   }
 
   /* ---------- Trin 3: læg i kurven ---------- */
-  async function fyld(varer) {
+  async function fyld(varer, omr) {
     rod.getElementById('go').disabled = true;
     rod.getElementById('luk').disabled = true;
     const raekker = lev.findRaekker();
@@ -320,13 +370,22 @@
         fundne.forEach(v => status(v, 'fejl', 'ingen knap'));
         fejl.push(...fundne); fundne.length = 0;
       } else {
-        const oensket = new Map(fundne.map(v => [raekker[lev.noegle(v)].input, v.antal]));
+        // Samme varenummer to gange (fx to rækker i arket) lægges sammen.
+        const oensket = new Map();
+        fundne.forEach(v => { const inp = raekker[lev.noegle(v)].input; oensket.set(inp, (oensket.get(inp) || 0) + v.antal); });
         Object.values(raekker).forEach(r => saetVaerdi(r.input, oensket.get(r.input) || 0));
         fundne.forEach(v => status(v, '', 'lægger i …'));
         await vent(400);
         const foer = kurvSignatur();
+        // Genindlæser shoppen siden, gemmes det, vi har sendt, så resultatet kan vises på næste side.
+        if (lev.genindlaeser) GM_setValue('afventer', JSON.stringify({
+          vaert: location.hostname, tid: Date.now(), foer, omr,
+          sendt: fundne.map(v => ({ antal: v.antal, navn: v.navn, enhed: v.enhed })),
+          mangler: fejl.map(v => v.navn),
+        }));
         knap.click();
-        const ok = await ventPaaBekraeftelse(null, foer, 10000);
+        const ok = await ventPaaBekraeftelse(null, foer, lev.genindlaeser ? 15000 : 10000);
+        if (lev.genindlaeser) GM_setValue('afventer', '');
         fundne.forEach(v => ok ? status(v, 'ok', '✓') : (status(v, 'fejl', 'ikke bekræftet'), ubekraeftet.push(v)));
       }
     } else {
@@ -357,7 +416,27 @@
       ${ubekraeftet.length ? `<p class="err">${ubekraeftet.length} ${ubekraeftet.length === 1 ? 'vare' : 'varer'} kunne ikke bekræftes i kurven: ${ubekraeftet.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek kurven, og læg dem i selv, hvis de mangler.</p>` : ''}
       ${fejl.length ? `<p class="err">${fejl.length} ${fejl.length === 1 ? 'vare' : 'varer'} kunne ikke findes på favoritlisten: ${fejl.map(v => esc(v.navn)).join(', ')}. Læg dem i kurven selv – eller føj dem til favoritlisten, så klarer knappen dem næste gang.</p>` : ''}
       <p>${ok} ${ok === 1 ? 'vare er' : 'varer er'} bekræftet i kurven. Tjek kurven, og bestil som du plejer.</p>
-      <div class="row"><a class="p" href="${esc(lev.kurvUrl)}">Gå til kurven</a><button class="g" id="luk" type="button">Luk</button></div>`;
+      <div class="row"><a class="p" href="${esc(kurvHref())}">Gå til kurven</a><button class="g" id="luk" type="button">Luk</button></div>`;
+    bind({ luk });
+  }
+
+  /* ---------- Efter genindlæsning: vis resultatet af det, der blev sendt ---------- */
+  async function visAfventende() {
+    let a = null;
+    try { a = JSON.parse(GM_getValue('afventer', '') || 'null'); } catch (e) { /* ignoreres */ }
+    if (!a || a.vaert !== location.hostname) return;
+    GM_setValue('afventer', '');
+    if (Date.now() - a.tid > 3 * 60 * 1000 || !Array.isArray(a.sendt)) return;   // gammelt – vis ikke
+    let ok = false;
+    for (let t = 0; t < 6000 && !ok; t += 300) { ok = !!lev.kurvElement() && kurvSignatur() !== a.foer; if (!ok) await vent(300); }
+    const nu = lev.kurvStatus();
+    vis(`
+      <h2>${esc(lev.navn)}${a.omr ? ' – ' + esc(a.omr) : ''}</h2>
+      <ul>${a.sendt.map(v => `<li data-s="${ok ? 'ok' : 'fejl'}"><span>${esc(v.antal)} × ${esc(v.navn)} <span class="small">(${esc(v.enhed)})</span></span><span class="s">${ok ? '✓' : '?'}</span></li>`).join('')}</ul>
+      ${ok ? `<p>Kurven er opdateret${nu ? ' – nu ' + esc(nu) : ''}. Tjek kurven, og bestil som du plejer.</p>`
+           : `<p class="err">Kurven ser ikke ud til at have ændret sig. Læs evt. beskeden fra ${esc(lev.navn)} på siden, og tjek kurven – læg varerne i selv, hvis de mangler.</p>`}
+      ${a.mangler && a.mangler.length ? `<p class="err">Ikke på listen – læg dem i selv: ${a.mangler.map(esc).join(', ')}.</p>` : ''}
+      <div class="row"><a class="p" href="${esc(kurvHref())}">Gå til kurven</a><button class="g" id="luk" type="button">Luk</button></div>`);
     bind({ luk });
   }
 })();
