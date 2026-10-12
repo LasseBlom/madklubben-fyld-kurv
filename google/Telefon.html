@@ -54,7 +54,12 @@ nav::-webkit-scrollbar { display: none; }
 nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 nav a { flex: 0 0 auto; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
 nav a .n { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
-section, h3 { scroll-margin-top: 150px; }
+section, h3 { scroll-margin-top: 200px; }
+.sog { position: relative; }
+.sog input { width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); font: 16px var(--font-body); padding: 0 40px 0 12px; -webkit-appearance: none; appearance: none; }
+.sog input::-webkit-search-cancel-button { display: none; }
+.sog button { position: absolute; right: 4px; top: 4px; width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; margin-right: 4px; }
 section { padding-top: 22px; }
 h2 { font-family: var(--font-display); font-size: 24px; text-transform: uppercase; margin: 0 0 4px; }
 h3 { font-family: var(--font-display); font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 6px; }
@@ -95,6 +100,10 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     <button class="vaelger" id="vaelger" type="button" aria-haspopup="dialog" aria-expanded="false" hidden>
       <span class="lbl">Liste</span><span class="cur" id="cur"></span><span class="cnt" id="curN"></span><span class="chev" aria-hidden="true">▾</span>
     </button>
+    <div class="sog" id="sogBoks" hidden>
+      <input type="search" id="sog" placeholder="Søg i alle lister …" autocomplete="off" enterkeyhint="search" aria-label="Søg i alle lister">
+      <button type="button" id="sogRyd" aria-label="Ryd søgning" hidden>×</button>
+    </div>
     <nav id="nav" aria-label="Spring til"></nav>
   </header>
 
@@ -134,6 +143,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   let varer = [];
   let omraader = [];
   let omraade = '';         // valgt fane
+  let sog = '';             // søgetekst – når den ikke er tom, vises søgeresultater fra alle lister
   const pending = {};      // id -> timer for gemning
   let inFlight = 0;
 
@@ -184,6 +194,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   // Har fanen flere leverandører, springer menuen mellem dem – ellers mellem kategorierne.
   function renderNav() {
     renderTabs();
+    if (sog.trim()) return;
     const lev = leverandorer();
     const mine = iOmraade();
     $('nav').innerHTML = lev.length > 1
@@ -195,16 +206,27 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     if (!varer.length) { $('main').innerHTML = '<div class="empty">Der er ingen varer på listen endnu.</div>'; return; }
     omraader = unikke(omraader.concat(varer.map(v => v.omraade))).filter(o => varer.some(v => v.omraade === o));
     if (!omraader.includes(omraade)) omraade = omraader.includes(hentFane()) ? hentFane() : omraader[0];
+    $('sogBoks').hidden = false;
+    if (sog.trim()) return renderSog();
     $('main').innerHTML = leverandorer().map(l => {
       const mine = iOmraade().filter(v => v.leverandor === l);
       const kats = unikke(mine.map(v => v.kategori));
       return `<section id="${slug(l)}"><h2>${esc(l)}</h2>` + kats.map(k => `<h3 id="${slug(l + '-' + k)}">${esc(k)}</h3><ul>` +
-        mine.filter(v => v.kategori === k).map(v => `
+        mine.filter(v => v.kategori === k).map(v => raekke(v)).join('') + '</ul>').join('') + '</section>';
+    }).join('');
+    $('done').hidden = false;
+    $('foot').hidden = false;
+    renderNav();
+  }
+
+  // Én vare. medListe = vis hvilken liste varen ligger på (bruges i søgeresultater).
+  function raekke(v, medListe) {
+    return `
           <li data-id="${esc(v.id)}" data-on="${v.antal > 0 ? 1 : 0}">
             <div class="thumb">${v.billede ? `<img src="${esc(v.billede)}" alt="" loading="lazy">` : ''}</div>
             <div>
               <div class="name">${esc(v.navn)}</div>
-              <div class="meta"><b>${esc(v.enhed)}</b>${v.detalje ? ' · ' + esc(v.detalje) : ''}</div>
+              <div class="meta">${medListe ? `<span class="tag">${esc(v.omraade)}</span>` : ''}<b>${esc(v.enhed)}</b>${v.detalje ? ' · ' + esc(v.detalje) : ''}</div>
               ${v.note ? `<div class="note">${esc(v.note)}</div>` : ''}
             </div>
             <div class="stepper">
@@ -212,11 +234,46 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
               <input type="number" inputmode="numeric" min="0" max="99" placeholder="0" value="${v.antal > 0 ? v.antal : ''}" aria-label="Antal ${esc(v.navn)}">
               <button class="plus" type="button" aria-label="Flere ${esc(v.navn)}">+</button>
             </div>
-          </li>`).join('') + '</ul>').join('') + '</section>';
-    }).join('');
-    $('done').hidden = false;
-    $('foot').hidden = false;
-    renderNav();
+          </li>`;
+  }
+
+  /* ---------- Søgning i alle lister ----------
+   * Alle søgeord skal passe (navn, beskrivelse, kategori, enhed, varenr., leverandør). Korte ord (1-2 tegn,
+   * fx "md") skal stå i starten af et ord. Under "Relateret" vises andre varer fra samme kategori som
+   * fundene – fx giver "md" (opvaskemiddel) også de andre opvaskemidler.
+   */
+  const norm = t => String(t || '').toLowerCase().normalize('NFKC');
+  const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function passer(v, ord) {
+    const tekst = norm([v.navn, v.detalje, v.kategori, v.enhed, v.varenr, v.leverandor].join(' '));
+    return ord.every(o => o.length < 3 ? new RegExp('(^|[^a-z0-9æøå])' + reEsc(o)).test(tekst) : tekst.includes(o));
+  }
+  function renderSog() {
+    const ord = norm(sog).split(/\s+/).filter(Boolean);
+    const point = v => { const n = norm(v.navn); return ord.every(o => n.startsWith(o) || n.includes(' ' + o)) ? 0 : ord.some(o => n.includes(o)) ? 1 : 2; };
+    const fund = varer.filter(v => passer(v, ord)).sort((a, b) => point(a) - point(b) || b.antal - a.antal || a.navn.localeCompare(b.navn, 'da'));
+    const fundNr = new Set(fund.map(v => v.leverandor + '|' + v.varenr));
+    const kats = unikke(fund.map(v => v.kategori));
+    // Relateret: samme kategori, ikke allerede fundet. Står en vare på flere lister, vises den én gang.
+    const set = new Set();
+    const rel = varer.filter(v => kats.includes(v.kategori) && !fundNr.has(v.leverandor + '|' + v.varenr))
+      .sort((a, b) => b.antal - a.antal || a.navn.localeCompare(b.navn, 'da'))
+      .filter(v => { const k = v.leverandor + '|' + v.varenr; return set.has(k) ? false : set.add(k); });
+    $('main').innerHTML = `<section><h2>Søgning</h2>` +
+      (fund.length ? `<h3>Fundet · ${fund.length}</h3><ul>${fund.map(v => raekke(v, true)).join('')}</ul>`
+                   : `<div class="empty">Ingen varer passer på "${esc(sog.trim())}".</div>`) +
+      kats.map(k => { const r = rel.filter(v => v.kategori === k).slice(0, 15); return r.length ? `<h3>Relateret · ${esc(k)}</h3><ul>${r.map(v => raekke(v, true)).join('')}</ul>` : ''; }).join('') +
+      '</section>';
+    $('done').hidden = true;
+    $('foot').hidden = true;
+    $('nav').innerHTML = '';
+    renderTabs();
+  }
+  function saetSog(t) {
+    sog = t;
+    $('sog').value = t;
+    $('sogRyd').hidden = !t;
+    render();
   }
 
   function updateRow(v) {
@@ -300,9 +357,19 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     if (b.dataset.o === omraade) return;
     omraade = b.dataset.o; gemFane();
     $('resetIdle').hidden = false; $('resetAsk').hidden = true;
+    sog = ''; $('sog').value = ''; $('sogRyd').hidden = true;
     render(); window.scrollTo(0, 0);
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('menu').hidden) visMenu(false); });
+  let sogTimer;
+  $('sog').addEventListener('input', e => {
+    clearTimeout(sogTimer);
+    const t = e.target.value;
+    $('sogRyd').hidden = !t;
+    sogTimer = setTimeout(() => { sog = t; render(); window.scrollTo(0, 0); }, 150);
+  });
+  $('sog').addEventListener('keydown', e => { if (e.key === 'Escape') saetSog(''); if (e.key === 'Enter') e.target.blur(); });
+  $('sogRyd').addEventListener('click', () => { saetSog(''); $('sog').focus(); });
   $('main').addEventListener('focusin', e => { if (e.target.tagName === 'INPUT') e.target.select(); });
 
   $('resetBtn').onclick = () => {
