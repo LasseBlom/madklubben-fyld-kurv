@@ -21,7 +21,7 @@ Knappen virker hos **Carlsberg**, **Philipson**, **Sigurd Müller** og **Multili
 
 Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den siger hvilke, så man kan tage dem selv.
 
-**Områder.** Telefonsiden har faner – *Kælder*, *Gulv* og *Køkken* (kolonnen `omraade` i arket). "Start ny optælling" nulstiller kun den fane, man står på. Hos Multiline har MKA en skabelon til gulvet ("GULV MKA 2026") og en til køkkenet ("KITCHEN …"); knappen læser skabelonens navn og lægger kun varerne fra den tilsvarende fane i kurven. Står samme vare i begge (servietter), har den en række pr. område.
+**Faner.** Telefonsiden har en fane pr. område (kolonnen `omraade` i arket): *Kælder* til drikkevarer og én fane pr. favoritliste hos Multiline (Gulv, Restaurant, Køkken, Takeaway, Emballage, Vakuumposer, Plastbøtter, Rengøring, Rengøringsartikler). "Start ny optælling" nulstiller kun den fane, man står på. Multilines lister og varer står i `google/Multiline.gs`; kolonnen `liste` er listens navn præcis som hos Multiline – knappen læser overskriften på den liste, man har åbnet, og lægger kun varerne fra den fane i kurven. Står samme vare på flere lister, har den en række pr. liste.
 
 **Multiline genindlæser siden**, når man trykker "Add to Cart". Knappen husker derfor, hvad den sendte, og viser resultatet på den side, man lander på.
 
@@ -29,6 +29,7 @@ Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den s
 |---|---|
 | `google/Kode.gs` | Gemmer og henter optællingen (Google Apps Script) |
 | `google/Telefon.html` | Telefonsiden, man tæller på |
+| `google/Multiline.gs` | Multilines favoritlister og varer (én fane pr. liste) |
 | `tampermonkey/fyld-kurv.user.js` | "Fyld kurv"-knappen i Chrome |
 
 ## Opsætning – del 1: telefonsiden (ca. 10 min, gøres én gang)

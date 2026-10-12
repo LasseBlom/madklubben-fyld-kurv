@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.3.0
+// @version      0.4.0
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -31,7 +31,9 @@
     .replace(/^\s*\d{4}\s+/, '')          // årgang ignoreres, så en ny årgang stadig matcher
     .replace(/[“”"']/g, '').replace(/\s+/g, ' ').trim();
   const erVarenr = v => /^\d{1,10}$/.test(String(v.varenr));
-  const erVarenrMedVariant = v => /^\d{1,10}(-\d{1,3})?$/.test(String(v.varenr));   // Multiline: "101468-1"
+  // Multiline: "101468-1"; samme varenummer to gange på én liste hedder "4899#2" for nr. 2.
+  const erVarenrMedVariant = v => /^\d{1,10}(-\d{1,3})?(#\d)?$/.test(String(v.varenr));
+  const normListe = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const erNavn = v => typeof v.varenr === 'string' && v.varenr.length >= 2 && v.varenr.length <= 150 && !/[<>]/.test(v.varenr);
 
   // Den største forælder til et antalsfelt, der kun indeholder ét antalsfelt = varens "kort".
@@ -108,13 +110,9 @@
       // Knappen vises kun på ordreskabeloner ("Order Templates"). Scriptet kører på hele shoppen,
       // fordi "Add to Cart" genindlæser siden – resultatet vises på den side, man lander på.
       erListeside: () => /ViewOrderTemplate-View/.test(location.pathname),
-      // MKA har to skabeloner – gulv og køkken. Skabelonens navn afgør, hvilken fane på telefonen der bruges.
-      omraade() {
-        const h = (document.querySelector('h1') || {}).textContent || '';
-        if (/gulv|floor/i.test(h)) return 'Gulv';
-        if (/køkken|kokken|kitchen/i.test(h)) return 'Køkken';
-        return null;
-      },
+      // Hver favoritliste er en fane på telefonen. Listens navn (overskriften) skal stå præcis som
+      // i kolonnen "liste" i arket – sådan vides det, hvilke varer der hører til denne side.
+      listeNavne: () => [...document.querySelectorAll('h1')].map(h => normListe(h.textContent)).filter(Boolean),
       samlet: true,
       genindlaeser: true,
       // Antalsfelterne hedder DesiredQuantity_…; varenummeret står som "Item # 101468-1" på rækken.
@@ -123,7 +121,10 @@
         document.querySelectorAll('input[name^="DesiredQuantity_"]').forEach(input => {
           const kort = kortFor(input, 'input[name^="DesiredQuantity_"]');
           const m = kort.textContent.match(/Item #\s*(\d+(?:-\d+)?)/);
-          if (m && !map[m[1]]) map[m[1]] = { input };
+          if (!m) return;
+          let k = m[1];
+          for (let n = 2; map[k]; n++) k = m[1] + '#' + n;
+          map[k] = { input };
         });
         return map;
       },
@@ -314,12 +315,15 @@
     try { data = await hentOptaelling(url); }
     catch (e) { return vis(`<h2>Noget gik galt</h2><p class="err">${esc(e.message)}</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div><p><button class="link" id="skift" type="button">Skift kælderliste-adresse</button></p>`), bind({ igen: () => hent(url), luk, skift: () => visOpsaetning() }); }
 
-    let omr = null;
-    if (lev.omraade) {
-      omr = lev.omraade();
-      if (!omr) return vis(`<h2>Hvilken liste er det?</h2><p>Knappen kan ikke se, om det er gulv- eller køkkenlisten. Listens navn skal indeholde <b>GULV</b> eller <b>KITCHEN</b>/<b>KØKKEN</b>.</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
+    // Har leverandøren flere favoritlister (Multiline), tages kun varerne fra fanen for DENNE liste.
+    let omr = null, liste = null;
+    if (lev.listeNavne) {
+      const navne = lev.listeNavne();
+      const v0 = (data.varer || []).find(v => v && v.leverandor === lev.navn && navne.includes(normListe(v.liste)));
+      if (!v0) return vis(`<h2>Listen er ikke på kælderlisten</h2><p>Der er ingen fane på telefonsiden til listen <b>${esc(navne[0] || '?')}</b>. Er listen omdøbt hos ${esc(lev.navn)}, skal navnet også rettes i arket (kolonnen "liste").</p><div class="row"><button class="g" id="luk" type="button">Luk</button></div>`), bind({ luk });
+      liste = normListe(v0.liste); omr = v0.omraade;
     }
-    const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && (!omr || (v.omraade || 'Kælder') === omr) && Number(v.antal) > 0);
+    const alle = (data.varer || []).filter(v => v && v.leverandor === lev.navn && (!liste || normListe(v.liste) === liste) && Number(v.antal) > 0);
     const ugyldige = alle.filter(v => !lev.gyldig(v) || !Number.isInteger(Number(v.antal)) || Number(v.antal) > MAKS_ANTAL);
     const varer = alle.filter(v => !ugyldige.includes(v)).map(v => Object.assign({}, v, { antal: Number(v.antal) }));
     const store = varer.filter(v => v.antal > STORT_ANTAL);
