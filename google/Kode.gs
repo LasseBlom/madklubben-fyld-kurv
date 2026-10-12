@@ -179,6 +179,27 @@ function nulstil(omraade) {
   }
 }
 
+/** Sætter alle antal hos én leverandør til 0 (fx alle Multiline-lister på én gang). Kaldes fra telefonsiden. */
+function nulstilLeverandor(leverandor) {
+  if (typeof leverandor !== 'string' || !leverandor) throw new Error('Ukendt leverandør.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ark = hentArk_();
+    const n = ark.getLastRow() - 1;
+    if (n > 0) {
+      const lev = ark.getRange(2, KOLONNER.indexOf('leverandor') + 1, n, 1).getValues();
+      if (!lev.some(r => r[0] === leverandor)) throw new Error('Ukendt leverandør.');
+      const nu = new Date();
+      const felt = ark.getRange(2, KOLONNER.indexOf('antal') + 1, n, 2);
+      felt.setValues(felt.getValues().map((r, i) => lev[i][0] === leverandor ? [0, nu] : r));
+    }
+    return hentData();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function doGet(e) {
   if (e && e.parameter && e.parameter.format === 'json') {
     return ContentService.createTextOutput(JSON.stringify(hentData()))

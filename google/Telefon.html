@@ -47,6 +47,10 @@ nav::-webkit-scrollbar { display: none; }
 .grid button .s { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
 .grid button .s b { color: var(--accent); }
 .grid button[aria-current="true"] { border: 2px solid var(--accent); background: var(--accent-soft); }
+.tom { margin-top: 10px; display: grid; justify-items: center; gap: 8px; }
+.tom .small { margin: 0; }
+.tomknapper { display: flex; gap: 8px; }
+.ghost:disabled { opacity: .45; cursor: default; }
 nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 nav a { flex: 0 0 auto; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 14px; }
 nav a .n { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
@@ -107,7 +111,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     <h2>Færdig med at tælle?</h2>
     <ol>
       <li>Gå til computeren og åbn bogmærkemappen <b>Bestil MKA</b> i Chrome (højreklik → Åbn alle).</li>
-      <li>Tryk på den røde knap <b>Fyld kurv</b> nederst til højre.</li>
+      <li>Tryk på den røde knap <b>Fyld kurv</b> nederst i hjørnet. Hos Multiline: åbn <b>MKA – ALLE VARER</b>, så kommer alle listerne med på én gang.</li>
       <li>Tjek kurven, og bestil som du plejer.</li>
     </ol>
   </div>
@@ -160,7 +164,16 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
       omraader.filter(o => gruppeFor(o) === g).map(o => {
         const mine = varer.filter(v => v.omraade === o), t = talt(mine);
         return `<button type="button" data-o="${esc(o)}" aria-current="${o === omraade}"><span class="t">${esc(o)}</span><span class="s">${mine.length} varer${t ? ` · <b>${t} talt</b>` : ''}</span></button>`;
-      }).join('') + '</div>').join('');
+      }).join('') + '</div>' + (g === 'Multiline' ? tomRaekke(g) : '')).join('');
+  }
+  // "Tøm alle Multiline-lister": sætter alle antal hos leverandøren til 0 – først efter bekræftelse.
+  function tomRaekke(lev, spoerg) {
+    const n = omraader.filter(o => gruppeFor(o) === lev).length;
+    const t = talt(varer.filter(v => v.leverandor === lev));
+    return `<div class="tom" data-lev="${esc(lev)}">` + (spoerg
+      ? `<p class="small">Alle antal på alle ${n} ${esc(lev)}-lister sættes til 0. Kælderen røres ikke.</p>
+         <div class="tomknapper"><button class="danger" type="button" data-tomja="${esc(lev)}">Ja, tøm alle</button><button class="ghost" type="button" data-tomnej="1">Fortryd</button></div>`
+      : `<button class="ghost" type="button" data-tom="${esc(lev)}" ${t ? '' : 'disabled'}>Tøm alle ${esc(lev)}-lister${t ? ` (${t} talt)` : ''}</button>`) + '</div>';
   }
   function visMenu(aaben) {
     $('menu').hidden = !aaben;
@@ -182,7 +195,6 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     if (!varer.length) { $('main').innerHTML = '<div class="empty">Der er ingen varer på listen endnu.</div>'; return; }
     omraader = unikke(omraader.concat(varer.map(v => v.omraade))).filter(o => varer.some(v => v.omraade === o));
     if (!omraader.includes(omraade)) omraade = omraader.includes(hentFane()) ? hentFane() : omraader[0];
-    $('resetText').textContent = `Alle antal under ${omraade} sættes til 0. De andre faner røres ikke.`;
     $('main').innerHTML = leverandorer().map(l => {
       const mine = iOmraade().filter(v => v.leverandor === l);
       const kats = unikke(mine.map(v => v.kategori));
@@ -268,6 +280,21 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   $('menuLuk').addEventListener('click', () => visMenu(false));
   $('menu').addEventListener('click', e => {
     if (e.target === $('menu')) return visMenu(false);          // tryk udenfor lukker
+    const tom = e.target.closest('[data-tom],[data-tomja],[data-tomnej]');
+    if (tom) {
+      const boks = tom.closest('.tom'), lev = boks.dataset.lev;
+      if (tom.dataset.tom) boks.outerHTML = tomRaekke(lev, true);
+      else if (tom.dataset.tomnej) boks.outerHTML = tomRaekke(lev);
+      else {
+        visMenu(false);
+        setSync('saving', 'Tømmer …');
+        google.script.run
+          .withSuccessHandler(data => { varer = data.varer || []; render(); setSync('saved', `Alle ${lev}-lister tømt`); })
+          .withFailureHandler(() => setSync('error', 'Kunne ikke tømme – prøv igen'))
+          .nulstilLeverandor(lev);
+      }
+      return;
+    }
     const b = e.target.closest('button[data-o]'); if (!b) return;
     visMenu(false);
     if (b.dataset.o === omraade) return;
@@ -278,7 +305,10 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('menu').hidden) visMenu(false); });
   $('main').addEventListener('focusin', e => { if (e.target.tagName === 'INPUT') e.target.select(); });
 
-  $('resetBtn').onclick = () => { $('resetIdle').hidden = true; $('resetAsk').hidden = false; };
+  $('resetBtn').onclick = () => {
+    $('resetText').textContent = `Alle antal under ${omraade} sættes til 0. De andre lister røres ikke.`;
+    $('resetIdle').hidden = true; $('resetAsk').hidden = false;
+  };
   $('resetNo').onclick = () => { $('resetIdle').hidden = false; $('resetAsk').hidden = true; };
   $('resetYes').onclick = () => {
     $('resetIdle').hidden = false; $('resetAsk').hidden = true;
