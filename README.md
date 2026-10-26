@@ -37,7 +37,7 @@ Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den s
 
 ## Produktion: premix og sirup
 
-Under **Liste → Produktion → Premix & sirup** på telefonsiden vælger man, hvad der skal laves: antal **kondier** premix og **liter** sirup (fx 10 L rabarbersirup). Nederst står så:
+Under **Liste → Produktion → Premix & sirup** på telefonsiden vælger man, hvad der skal laves: premix i **kondier** eller **liter** (knappen "kondi | liter" ved hver premix) og sirup i **liter** (fx 10 L rabarbersirup). Rhubarb Bomb og Espresso Martini findes kun pr. liter (fra "MKA premix cheat sheet"). Nederst står så:
 
 - **Flasker hos Philipson.** De lægges *oven i* kælderoptællingen, når man trykker **Fyld kurv** – personalets antal ændres aldrig, så der altid er flasker til overs. På kælderlisten står det ved varen ("+ 3 fl. til premix").
 - **Købes andet sted** (bær, sukker, juice, mælk). **Send indkøbsliste** åbner telefonens del-menu (SMS, mail …), og listen står også i arket **Indkøbsliste**, så den kan åbnes fra en anden computer.
@@ -45,7 +45,7 @@ Under **Liste → Produktion → Premix & sirup** på telefonsiden vælger man, 
 
 Tryk **Ryd produktion**, når der er bestilt.
 
-**Opskrifterne** ligger i arkene **Opskrifter** og **Ingredienser** og kan rettes direkte dér. I "Ingredienser" er `kilde` enten et vare-id fra arket "Varer" (flasker – mængden i liter, flaskestørrelsen læses af "70 cl"), navnet på en anden opskrift (sirup), `køb` (indkøbslisten) eller `nej` (vand). Frugtsirup laves 1:1:1, og vi regner med, at 5 kg + 5 kg + 5 L giver 10 L (`giver_l`) – hellere lidt for meget. `opsaet` lægger kun manglende opskrifter ind; rettelser i arket bevares.
+**Opskrifterne** ligger i arkene **Opskrifter** og **Ingredienser** og kan rettes direkte dér. I "Ingredienser" er `kilde` enten et vare-id fra arket "Varer" (flasker – mængden i liter, flaskestørrelsen læses af "70 cl"), navnet på en anden opskrift (sirup), `køb` (indkøbslisten) eller `nej` (vand). `giver_l` er, hvor mange liter én batch (én kondi) giver – det bruges, når man vælger liter. Frugtsirup laves 1:1:1, og vi regner med, at 5 kg + 5 kg + 5 L giver 10 L (`giver_l`) – hellere lidt for meget. `opsaet` lægger kun manglende opskrifter ind; rettelser i arket bevares.
 
 Fersken/hibiscus-sirup og tranebærsirup har ingen opskrift endnu – skriv ingredienserne i "Ingredienser", så kommer de med på indkøbslisten.
 

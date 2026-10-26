@@ -12,8 +12,9 @@
  * opsaet() lægger kun de opskrifter ind, der mangler – rettelser i arket bevares.
  *
  * Opskrifter: [navn, type, måles i, giver liter pr. batch, note]
- *   "kondi": man vælger antal kondier – ingredienserne er pr. kondi.
- *   "L":     man vælger liter – ingredienserne er pr. batch, der giver "giver_l" liter.
+ *   Ingredienserne er altid pr. batch, og en batch giver "giver_l" liter.
+ *   "kondi": batchen er én kondi. Man kan vælge antal kondier ELLER liter (kolonnen "enhed" husker valget).
+ *   "L":     man vælger liter.
  * Ingredienser: [opskrift, ingrediens, mængde, enhed, kilde]
  *   kilde = id i arket "Varer" (flasker – mængden er i liter, flaskestørrelsen læses af "detalje", fx "70 cl"),
  *           navnet på en anden opskrift (fx en sirup),
@@ -23,17 +24,22 @@
 const PROD_ARK = 'Opskrifter';
 const PROD_INGR_ARK = 'Ingredienser';
 const PROD_INDKOEB_ARK = 'Indkøbsliste';
-const PROD_KOLONNER = ['opskrift', 'type', 'maales_i', 'giver_l', 'skal_laves', 'note', 'opdateret'];
+// Nye kolonner tilføjes til sidst. "enhed" = det, man har valgt på telefonen ("kondi" eller "L").
+const PROD_KOLONNER = ['opskrift', 'type', 'maales_i', 'giver_l', 'skal_laves', 'note', 'opdateret', 'enhed'];
 const PROD_INGR_KOLONNER = ['opskrift', 'ingrediens', 'maengde', 'enhed', 'kilde'];
 const PROD_MAKS = { kondi: 20, L: 100 };
 
 // Frugtsirup laves 1:1:1 (bær, sukker, vand). 5 + 5 + 5 giver 10-12 L – vi regner med 10 L, så der hellere er for meget.
+// giver_l for premix = liter i én kondi (fx 4,2 L Julep i en 5 L kondi) – bruges, når man vælger liter.
+// Rhubarb Bomb og Espresso Martini er pr. liter (fra "MKA premix cheat sheet") – vi kender ikke deres kondi.
 const PROD_OPSKRIFTER = [
-  ['Julep premix', 'Premix', 'kondi', 5, '5 L kondi'],
+  ['Julep premix', 'Premix', 'kondi', 4.2, '5 L kondi'],
   ['Hula Hula premix', 'Premix', 'kondi', 5, '5 L kondi'],
   ['Woo Woo premix', 'Premix', 'kondi', 5, '5 L kondi'],
-  ['Slam Dunk premix', 'Premix', 'kondi', 5, '5 L kondi. Milk-washes med sødmælk i en anden kondi, står min. 5 timer, strain dagen efter.'],
+  ['Slam Dunk premix', 'Premix', 'kondi', 4.7, '5 L kondi. Milk-washes med sødmælk i en anden kondi, står min. 5 timer, strain dagen efter.'],
   ['Oliveto premix', 'Premix', 'kondi', 3, '3 L kondi'],
+  ['Rhubarb Bomb premix', 'Premix', 'L', 1, 'Pr. liter. Resten (ca. 0,23 L pr. liter) står ikke i cheat sheet\'et'],
+  ['Espresso Martini premix', 'Premix', 'L', 1, 'Pr. liter'],
   ['Brombærsirup', 'Sirup', 'L', 10, '5 kg bær + 5 kg sukker + 5 L vand ≈ 10-12 L'],
   ['Havtornsirup', 'Sirup', 'L', 10, '5 kg bær + 5 kg sukker + 5 L vand ≈ 10-12 L'],
   ['Rabarbersirup', 'Sirup', 'L', 10, '5 kg rabarber + 5 kg sukker + 5 L vand ≈ 10-12 L'],
@@ -62,6 +68,11 @@ const PROD_INGREDIENSER = [
   ['Oliveto premix', 'Licor 43', 2, 'L', 'p-licor43'],
   ['Oliveto premix', 'Absolut vodka', 0.5, 'L', 'p-absolut'],
   ['Oliveto premix', 'Sukkersirup', 0.5, 'L', 'Sukkersirup'],
+  ['Rhubarb Bomb premix', 'Beefeater gin', 0.31, 'L', 'p-beefeater'],
+  ['Rhubarb Bomb premix', 'Rabarbersirup', 0.46, 'L', 'Rabarbersirup'],
+  ['Espresso Martini premix', 'Kahlúa', 0.4, 'L', 'p-kahlua'],
+  ['Espresso Martini premix', 'Absolut vodka', 0.4, 'L', 'p-absolut'],
+  ['Espresso Martini premix', 'Frangelico', 0.2, 'L', 'p-frangelico'],
   ['Brombærsirup', 'Brombær', 5, 'kg', 'køb'],
   ['Brombærsirup', 'Sukker', 5, 'kg', 'køb'],
   ['Brombærsirup', 'Vand', 5, 'L', 'nej'],
@@ -88,7 +99,7 @@ function opsaetProduktion_() {
   const nye = PROD_OPSKRIFTER.filter(o => !findes.includes(o[0]));
   if (nye.length) {
     ark.getRange(ark.getLastRow() + 1, 1, nye.length, PROD_KOLONNER.length)
-      .setValues(nye.map(o => [o[0], o[1], o[2], o[3], 0, o[4], '']));
+      .setValues(nye.map(o => [o[0], o[1], o[2], o[3], 0, o[4], '', o[2]]));
     // Ingredienser kun til de nye opskrifter – en opskrift, der er rettet i arket, røres ikke.
     const navne = nye.map(o => o[0]);
     const rk = PROD_INGREDIENSER.filter(i => navne.includes(i[0]));
@@ -106,6 +117,9 @@ function arkMedOverskrift_(ss, navn, kolonner) {
     ark.appendRow(kolonner);
     ark.setFrozenRows(1);
   }
+  // Ældre ark mangler de nyeste kolonner – de tilføjes til sidst i overskriftsrækken.
+  const head = ark.getRange(1, 1, 1, kolonner.length).getValues()[0].map(String);
+  kolonner.forEach((k, i) => { if (!head[i]) ark.getRange(1, i + 1).setValue(k); });
   return ark;
 }
 
@@ -146,6 +160,8 @@ function beregnProduktion_(varer) {
     navn: String(o.opskrift),
     type: String(o.type || ''),
     maalesI: String(o.maales_i) === 'kondi' ? 'kondi' : 'L',
+    // Valgt enhed: kondi kun for opskrifter, der laves i kondier. Tom = som "maales_i".
+    enhed: String(o.maales_i) === 'kondi' && String(o.enhed || 'kondi') !== 'L' ? 'kondi' : 'L',
     giverL: tal_(o.giver_l),
     skalLaves: tal_(o.skal_laves),
     note: String(o.note || ''),
@@ -164,8 +180,8 @@ function beregnProduktion_(varer) {
   const ukendt = [];           // kilder, der hverken er en vare, en opskrift, "køb" eller "nej"
 
   opskrifter.filter(o => o.skalLaves > 0).forEach(o => {
-    // kondi: ingredienserne er pr. kondi. L: ingredienserne er pr. batch på giver_l liter.
-    const faktor = o.maalesI === 'kondi' ? o.skalLaves : (o.giverL > 0 ? o.skalLaves / o.giverL : 0);
+    // Ingredienserne er pr. batch (én kondi eller giver_l liter).
+    const faktor = o.enhed === 'kondi' ? o.skalLaves : (o.giverL > 0 ? o.skalLaves / o.giverL : 0);
     o.ingredienser.forEach(i => {
       const m = i.maengde * faktor;
       const k = i.kilde.toLowerCase();
@@ -212,7 +228,7 @@ const fmtTal_ = n => String(Math.round(n * 100) / 100).replace('.', ',');
 
 // Indkøbslisten som almindelig tekst – til arket og til "Del"-knappen på telefonen.
 function indkoebTekst_(b) {
-  const laves = b.opskrifter.filter(o => o.skalLaves > 0).map(o => `${fmtTal_(o.skalLaves)} ${o.maalesI === 'kondi' ? 'kondi' : 'L'} ${o.navn}`);
+  const laves = b.opskrifter.filter(o => o.skalLaves > 0).map(o => `${fmtTal_(o.skalLaves)} ${o.enhed} ${o.navn}`);
   if (!laves.length) return '';
   const linjer = ['Indkøb til premix og sirup – ' + RESTAURANT, 'Skal laves: ' + laves.join(', '), ''];
   if (b.indkoeb.length) linjer.push('KØBES:', ...b.indkoeb.map(x => `- ${fmtTal_(x.maengde)} ${x.enhed} ${x.navn}`), '');
@@ -239,21 +255,24 @@ function hentProduktion() {
   return Object.assign(b, { tekst: indkoebTekst_(b) });
 }
 
-/** Gemmer, hvor meget der skal laves af én opskrift. Kaldes fra telefonsiden. */
-function gemProduktion(navn, maengde) {
+/**
+ * Gemmer, hvor meget der skal laves af én opskrift. Kaldes fra telefonsiden.
+ * enhed = "kondi" eller "L" (kun opskrifter, der laves i kondier, kan tælles i kondier).
+ */
+function gemProduktion(navn, maengde, enhed) {
   if (typeof navn !== 'string' || !navn || navn.length > 80) throw new Error('Ukendt opskrift.');
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const o = laesArk_(PROD_ARK).find(r => String(r.opskrift) === navn);
     if (!o) throw new Error('Ukendt opskrift: ' + navn);
-    const kondi = String(o.maales_i) === 'kondi';
-    // Kondier i hele tal, liter i halve.
-    maengde = Math.max(0, Math.min(PROD_MAKS[kondi ? 'kondi' : 'L'], kondi ? Math.round(tal_(maengde)) : Math.round(tal_(maengde) * 2) / 2));
+    const kondi = String(o.maales_i) === 'kondi' && enhed !== 'L';
+    // Kondier i hele tal, liter i deciliter.
+    maengde = Math.max(0, Math.min(PROD_MAKS[kondi ? 'kondi' : 'L'], kondi ? Math.round(tal_(maengde)) : Math.round(tal_(maengde) * 10) / 10));
     const ark = SpreadsheetApp.getActive().getSheetByName(PROD_ARK);
-    const kol = PROD_KOLONNER.indexOf('skal_laves') + 1;
-    ark.getRange(o.raekke, kol).setValue(maengde);
+    ark.getRange(o.raekke, PROD_KOLONNER.indexOf('skal_laves') + 1).setValue(maengde);
     ark.getRange(o.raekke, PROD_KOLONNER.indexOf('opdateret') + 1).setValue(new Date());
+    ark.getRange(o.raekke, PROD_KOLONNER.indexOf('enhed') + 1).setValue(kondi ? 'kondi' : 'L');
     const b = hentProduktion();
     skrivIndkoebsliste_(b);
     return b;

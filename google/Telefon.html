@@ -90,6 +90,9 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 .stepper input.l { width: 58px; }
 .hint { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .hint button { margin-left: 4px; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 1px 8px; font: 600 12px var(--font-body); cursor: pointer; }
+.enh { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; vertical-align: 1px; margin-right: 4px; }
+.enh button { border: 0; background: none; color: var(--muted); font: 600 12px var(--font-body); padding: 2px 9px; cursor: pointer; touch-action: manipulation; }
+.enh button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
 .prod-ul li { grid-template-columns: minmax(0, 1fr) auto; padding-left: 12px; }
 .sum { margin-top: 26px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
 .sum h2 { font-size: 20px; }
@@ -323,25 +326,32 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     if (!prod.opskrifter.length) { $('main').innerHTML = '<div class="empty">Der er ingen opskrifter endnu. Kør opsaet i Apps Script.</div>'; return; }
     const gruppe = (id, titel, liste) => `<section id="${id}"><h2>${titel}</h2><ul class="prod-ul">${liste.map(prodRaekke).join('')}</ul></section>`;
     $('main').innerHTML =
-      gruppe('premix', 'Premix', prod.opskrifter.filter(o => o.maalesI === 'kondi')) +
-      gruppe('sirup', 'Sirup', prod.opskrifter.filter(o => o.maalesI !== 'kondi')) +
+      gruppe('premix', 'Premix', prod.opskrifter.filter(o => o.type === 'Premix')) +
+      gruppe('sirup', 'Sirup', prod.opskrifter.filter(o => o.type !== 'Premix')) +
       `<div class="sum" id="bestil"></div>`;
     renderSum();
   }
+  // Premix, der laves i kondier, kan vælges i kondi eller liter – knapperne "kondi | liter" skifter.
+  const omregning = o => o.maalesI !== 'kondi' || !o.skalLaves || !o.giverL ? ''
+    : o.enhed === 'kondi' ? `= ${tal(o.skalLaves * o.giverL)} L` : `≈ ${tal(o.skalLaves / o.giverL)} kondi`;
   function prodRaekke(o) {
-    const kondi = o.maalesI === 'kondi';
+    const kondi = o.enhed === 'kondi';
     const ingr = o.ingredienser.filter(i => i.kilde.toLowerCase() !== 'nej').map(i => i.ingrediens).join(', ');
+    const enh = o.maalesI === 'kondi'
+      ? `<span class="enh"><button type="button" data-enh="kondi" aria-pressed="${kondi}">kondi</button><button type="button" data-enh="L" aria-pressed="${!kondi}">liter</button></span>`
+      : '<b>liter</b> · ';
     return `
           <li data-opskrift="${esc(o.navn)}" data-on="${o.skalLaves > 0 ? 1 : 0}">
             <div>
               <div class="name">${esc(o.navn)}</div>
-              <div class="meta">${kondi ? `<b>kondi</b> · ${esc(ingr)}` : `<b>liter</b> · ${esc(o.note)}`}</div>
+              <div class="meta">${enh}${esc(o.type === 'Premix' ? ingr : o.note)}</div>
+              <div class="hint" data-omr>${omregning(o)}</div>
               ${o.manglerOpskrift && !/mangler/i.test(o.note) ? '<div class="note">Opskrift mangler – skriv den i arket "Ingredienser"</div>' : ''}
               <div class="hint" data-hint></div>
             </div>
             <div class="stepper">
               <button class="minus" type="button" aria-label="Mindre ${esc(o.navn)}" ${o.skalLaves > 0 ? '' : 'disabled'}>−</button>
-              <input type="number" inputmode="decimal" min="0" step="${kondi ? 1 : 0.5}" placeholder="0" class="${kondi ? '' : 'l'}" value="${o.skalLaves > 0 ? o.skalLaves : ''}" aria-label="${kondi ? 'Kondier' : 'Liter'} ${esc(o.navn)}">
+              <input type="number" inputmode="decimal" min="0" step="${kondi ? 1 : 0.1}" placeholder="0" class="${kondi ? '' : 'l'}" value="${o.skalLaves > 0 ? o.skalLaves : ''}" aria-label="${kondi ? 'Kondier' : 'Liter'} ${esc(o.navn)}">
               <button class="plus" type="button" aria-label="Mere ${esc(o.navn)}">+</button>
             </div>
           </li>`;
@@ -376,18 +386,22 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
          <div class="knapper"><button class="danger" type="button" id="rydJa">Ja, ryd</button><button class="ghost" type="button" id="rydNej">Fortryd</button></div></div>`;
     renderTabs();
   }
-  function setProd(navn, m) {
+  function setProd(navn, m, enhed) {
     const o = prod.opskrifter.find(x => x.navn === navn); if (!o) return;
-    const kondi = o.maalesI === 'kondi';
-    m = Math.max(0, Math.min(kondi ? 20 : 100, kondi ? Math.round(Number(m) || 0) : Math.round((Number(String(m).replace(',', '.')) || 0) * 2) / 2));
-    if (o.skalLaves === m) return;
+    const nyEnhed = enhed && enhed !== o.enhed;
+    if (nyEnhed) o.enhed = enhed;
+    const kondi = o.enhed === 'kondi';
+    m = Math.max(0, Math.min(kondi ? 20 : 100, kondi ? Math.round(Number(m) || 0) : Math.round((Number(String(m).replace(',', '.')) || 0) * 10) / 10));
+    if (o.skalLaves === m && !nyEnhed) return;
     o.skalLaves = m;
     const li = document.querySelector(`li[data-opskrift="${CSS.escape(navn)}"]`);
-    if (li) {
+    if (li && nyEnhed) li.outerHTML = prodRaekke(o);
+    else if (li) {
       li.dataset.on = m > 0 ? '1' : '0';
       const inp = li.querySelector('input');
       if (document.activeElement !== inp) inp.value = m > 0 ? m : '';
       li.querySelector('.minus').disabled = m <= 0;
+      li.querySelector('[data-omr]').textContent = omregning(o);
     }
     clearTimeout(prodPending[navn]);
     setSync('saving', 'Regner …');
@@ -400,7 +414,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
       .withSuccessHandler(data => {
         inFlight--;
         // Svaret kan være ældre end det, der er tastet siden – behold de lokale tal for opskrifter, der stadig venter.
-        data.opskrifter.forEach(o => { const gl = prod.opskrifter.find(x => x.navn === o.navn); if (gl && prodPending[o.navn]) o.skalLaves = gl.skalLaves; });
+        data.opskrifter.forEach(o => { const gl = prod.opskrifter.find(x => x.navn === o.navn); if (gl && prodPending[o.navn]) { o.skalLaves = gl.skalLaves; o.enhed = gl.enhed; } });
         prod = data; opdaterPremix();
         if (!inFlight && !Object.keys(prodPending).length) { setSync('saved', 'Gemt'); renderSum(); }
       })
@@ -409,7 +423,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
         setSync('error', 'Ikke gemt – prøver igen');
         prodPending[navn] = setTimeout(() => gemProd(navn, prod.opskrifter.find(x => x.navn === navn).skalLaves), 4000);
       })
-      .gemProduktion(navn, m);
+      .gemProduktion(navn, m, prod.opskrifter.find(x => x.navn === navn).enhed);
   }
   async function delListe(kunKopi) {
     const tekst = prod && prod.tekst; if (!tekst) return;
@@ -482,6 +496,8 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     if (pl) {
       const o = prod.opskrifter.find(x => x.navn === pl.dataset.opskrift);
       if (b.dataset.saet) setProd(o.navn, Number(b.dataset.saet));
+      // Skift kondi/liter – mængden regnes om (kondier rundes op, så der er nok).
+      if (b.dataset.enh && b.dataset.enh !== o.enhed) setProd(o.navn, !o.giverL ? 0 : b.dataset.enh === 'L' ? o.skalLaves * o.giverL : Math.ceil(o.skalLaves / o.giverL - 1e-9), b.dataset.enh);
       if (b.classList.contains('plus')) setProd(o.navn, o.skalLaves + 1);
       if (b.classList.contains('minus')) setProd(o.navn, o.skalLaves - 1);
       return;

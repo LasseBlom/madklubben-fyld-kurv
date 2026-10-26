@@ -58,6 +58,7 @@ const STARTVARER = [
   ['p-havana-3', 'Philipson', 'Spiritus', 'Havana Club 3 år', '70 cl', 'flaske', 'Havana Club Anejo 3 års', '', '', 39],
   ['p-amaretto', 'Philipson', 'Spiritus', 'Amaretto Royal Conti', '70 cl', 'flaske', 'Amaretto Royal Conti', '', '', 40],
   ['p-campari', 'Philipson', 'Spiritus', 'Campari', '70 cl', 'flaske', 'Campari Bitter', '', '', 41],
+  ['p-frangelico', 'Philipson', 'Spiritus', 'Frangelico', '70 cl', 'flaske', 'Frangelico likør', '', '', 43],
   ['p-cartron-peche', 'Philipson', 'Spiritus', 'Fersken likør (Cartron)', '70 cl', 'flaske', 'Joseph Cartron Crème de Pêche de Vigne', '', 'Tjek navnet på Philipsons favoritliste', 42],
 ];
 
