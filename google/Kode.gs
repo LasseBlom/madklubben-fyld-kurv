@@ -51,6 +51,14 @@ const STARTVARER = [
   ['p-four-roses', 'Philipson', 'Spiritus', 'Four Roses Bourbon', '70 cl', 'flaske', 'Four Roses Bourbon', 'https://d1fjp8wkdq1msu.cloudfront.net/Admin/Public/GetImage.ashx?width=160&height=160&image=/Files/Images/Ecom/Products/92920000.png', '', 33],
   ['p-hendricks', 'Philipson', 'Spiritus', 'Hendrick\'s Gin', '70 cl', 'flaske', 'Hendricks Gin', 'https://d1fjp8wkdq1msu.cloudfront.net/Admin/Public/GetImage.ashx?width=160&height=160&image=/Files/Images/Ecom/Products/90000062.png', '', 34],
   ['p-monkey47', 'Philipson', 'Spiritus', 'Monkey 47 Gin', '50 cl', 'flaske', 'Monkey 47 Dry Gin Schwarzwald', 'https://d1fjp8wkdq1msu.cloudfront.net/Admin/Public/GetImage.ashx?width=160&height=160&image=/Files/Images/Ecom/Products/93300400.png', '', 35],
+  // Spiritus til premix (se Produktion.gs). Navnene er Philipsons – står varen ikke på favoritlisten, siger knappen det.
+  ['p-olmeca', 'Philipson', 'Spiritus', 'Olmeca Tequila Blanco', '70 cl', 'flaske', 'Olmeca Tequila Blanco', '', '', 36],
+  ['p-absolut', 'Philipson', 'Spiritus', 'Absolut Vodka', '70 cl', 'flaske', 'Absolut Vodka', '', '', 37],
+  ['p-licor43', 'Philipson', 'Spiritus', 'Licor 43', '70 cl', 'flaske', 'Licor 43', '', '', 38],
+  ['p-havana-3', 'Philipson', 'Spiritus', 'Havana Club 3 år', '70 cl', 'flaske', 'Havana Club Anejo 3 års', '', '', 39],
+  ['p-amaretto', 'Philipson', 'Spiritus', 'Amaretto Royal Conti', '70 cl', 'flaske', 'Amaretto Royal Conti', '', '', 40],
+  ['p-campari', 'Philipson', 'Spiritus', 'Campari', '70 cl', 'flaske', 'Campari Bitter', '', '', 41],
+  ['p-cartron-peche', 'Philipson', 'Spiritus', 'Fersken likør (Cartron)', '70 cl', 'flaske', 'Joseph Cartron Crème de Pêche de Vigne', '', 'Tjek navnet på Philipsons favoritliste', 42],
 ];
 
 /** Kør én gang fra Apps Script-editoren. Opretter arket og lægger prøvevarerne ind. */
@@ -100,6 +108,7 @@ function opsaet() {
     }
   }
   ark.autoResizeColumns(1, KOLONNER.length);
+  opsaetProduktion_();
 }
 
 function hentArk_() {
@@ -108,18 +117,29 @@ function hentArk_() {
   return ark;
 }
 
-/** Alle varer med antal. Bruges af både telefonsiden og "Fyld kurv". */
+/**
+ * Alle varer med antal. Bruges af både telefonsiden og "Fyld kurv".
+ * "premix" er flasker til det, der skal laves (Produktion.gs) – de står for sig og lægges
+ * først oven i "antal", når "Fyld kurv" henter data (doGet). Personalets antal røres aldrig.
+ */
 function hentData() {
+  const varer = laesVarer_();
+  const premix = premixFlasker_(varer);
+  varer.forEach(v => { v.premix = premix[v.id] || 0; });
+  let senest = '';
+  varer.forEach(v => { if (v.opdateret > senest) senest = v.opdateret; });
+  // samleLister: hos disse lister lægger knappen ALLE leverandørens talte varer i kurven.
+  return { restaurant: RESTAURANT, opdateret: senest, omraader: OMRAADER, samleLister: { Multiline: ML_SAMLET }, varer: varer };
+}
+
+function laesVarer_() {
   const ark = hentArk_();
   const values = ark.getDataRange().getValues();
   const head = values.shift();
   const idx = Object.fromEntries(head.map((h, i) => [h, i]));
-  let senest = '';
-  const varer = values
+  return values
     .filter(r => r[idx.id])
     .map(r => {
-      const opd = r[idx.opdateret] ? new Date(r[idx.opdateret]).toISOString() : '';
-      if (opd > senest) senest = opd;
       return {
         id: String(r[idx.id]),
         leverandor: String(r[idx.leverandor]),
@@ -134,10 +154,9 @@ function hentData() {
         antal: Number(r[idx.antal]) || 0,
         omraade: String(r[idx.omraade] || OMRAADER[0]),
         liste: String(r[idx.liste] || ''),
+        opdateret: r[idx.opdateret] ? new Date(r[idx.opdateret]).toISOString() : '',
       };
     });
-  // samleLister: hos disse lister lægger knappen ALLE leverandørens talte varer i kurven.
-  return { restaurant: RESTAURANT, opdateret: senest, omraader: OMRAADER, samleLister: { Multiline: ML_SAMLET }, varer: varer };
 }
 
 /** Gemmer antallet for én vare. Kaldes fra telefonsiden. */
@@ -202,7 +221,10 @@ function nulstilLeverandor(leverandor) {
 
 function doGet(e) {
   if (e && e.parameter && e.parameter.format === 'json') {
-    return ContentService.createTextOutput(JSON.stringify(hentData()))
+    // "Fyld kurv" får antal + flasker til premix i ét tal (loftet på 99 gælder stadig).
+    const data = hentData();
+    data.varer.forEach(v => { v.antal = Math.min(MAKS_ANTAL, v.antal + v.premix); });
+    return ContentService.createTextOutput(JSON.stringify(data))
       .setMimeType(ContentService.MimeType.JSON);
   }
   return HtmlService.createHtmlOutputFromFile('Telefon')

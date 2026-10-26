@@ -87,6 +87,19 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 .ghost { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 10px 16px; font: 15px var(--font-body); cursor: pointer; }
 .danger { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 10px; padding: 10px 16px; font: 600 15px var(--font-body); cursor: pointer; }
 .small { font-size: 13px; color: var(--muted); text-align: center; }
+.stepper input.l { width: 58px; }
+.hint { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.hint button { margin-left: 4px; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 1px 8px; font: 600 12px var(--font-body); cursor: pointer; }
+.prod-ul li { grid-template-columns: minmax(0, 1fr) auto; padding-left: 12px; }
+.sum { margin-top: 26px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.sum h2 { font-size: 20px; }
+.sum h3 { margin-top: 14px; }
+.sum ul { background: none; border: 0; border-radius: 0; display: grid; gap: 4px; }
+.sum li { display: flex; justify-content: space-between; gap: 12px; padding: 0; border: 0; }
+.sum li .m { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sum .small { text-align: left; margin: 4px 0 0; }
+.sum .warn { color: var(--warn); font-size: 14px; margin: 10px 0 0; }
+.knapper { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -144,6 +157,9 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   let omraader = [];
   let omraade = '';         // valgt fane
   let sog = '';             // søgetekst – når den ikke er tom, vises søgeresultater fra alle lister
+  const PROD = 'Produktion'; // fanen med premix og sirup (Produktion.gs) – den har ingen varer, men egne opskrifter
+  let prod = null;          // svar fra hentProduktion(): opskrifter, flasker, indkøb, sirup, tekst
+  const prodPending = {};  // opskrift -> timer for gemning
   const pending = {};      // id -> timer for gemning
   let inFlight = 0;
 
@@ -163,15 +179,19 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 
   // Listevælgeren: én stor knap med den valgte liste – menuen viser alle lister på én gang,
   // samlet i grupper (lister med kun Multiline-varer under "Multiline", resten under "Drikkevarer").
-  const gruppeFor = o => { const lev = unikke(varer.filter(v => v.omraade === o).map(v => v.leverandor)); return lev.length === 1 && lev[0] === 'Multiline' ? 'Multiline' : 'Drikkevarer'; };
+  const gruppeFor = o => { if (o === PROD) return PROD; const lev = unikke(varer.filter(v => v.omraade === o).map(v => v.leverandor)); return lev.length === 1 && lev[0] === 'Multiline' ? 'Multiline' : 'Drikkevarer'; };
   function renderTabs() {
     $('vaelger').hidden = omraader.length < 2;
-    const n = talt(varer.filter(v => v.omraade === omraade));
+    const n = omraade === PROD ? (prod ? prod.opskrifter.filter(x => x.skalLaves > 0).length : 0) : talt(varer.filter(v => v.omraade === omraade));
     $('cur').textContent = omraade;
-    $('curN').textContent = n ? `${n} talt` : '';
+    $('curN').textContent = n ? (omraade === PROD ? `${n} skal laves` : `${n} talt`) : '';
     const grupper = unikke(omraader.map(gruppeFor));
     $('menuIndhold').innerHTML = grupper.map(g => `<h3>${esc(g)}</h3><div class="grid">` +
       omraader.filter(o => gruppeFor(o) === g).map(o => {
+        if (o === PROD) {
+          const n = prod ? prod.opskrifter.filter(x => x.skalLaves > 0).length : 0;
+          return `<button type="button" data-o="${esc(o)}" aria-current="${o === omraade}"><span class="t">Premix & sirup</span><span class="s">${n ? `<b>${n} skal laves</b>` : 'Hvad skal laves?'}</span></button>`;
+        }
         const mine = varer.filter(v => v.omraade === o), t = talt(mine);
         return `<button type="button" data-o="${esc(o)}" aria-current="${o === omraade}"><span class="t">${esc(o)}</span><span class="s">${mine.length} varer${t ? ` · <b>${t} talt</b>` : ''}</span></button>`;
       }).join('') + '</div>' + (g === 'Multiline' ? tomRaekke(g) : '')).join('');
@@ -195,6 +215,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
   function renderNav() {
     renderTabs();
     if (sog.trim()) return;
+    if (omraade === PROD) { $('nav').innerHTML = '<a href="#premix">Premix</a><a href="#sirup">Sirup</a><a href="#bestil">Skal bestilles</a>'; return; }
     const lev = leverandorer();
     const mine = iOmraade();
     $('nav').innerHTML = lev.length > 1
@@ -204,10 +225,11 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 
   function render() {
     if (!varer.length) { $('main').innerHTML = '<div class="empty">Der er ingen varer på listen endnu.</div>'; return; }
-    omraader = unikke(omraader.concat(varer.map(v => v.omraade))).filter(o => varer.some(v => v.omraade === o));
+    omraader = unikke(omraader.concat(varer.map(v => v.omraade))).filter(o => varer.some(v => v.omraade === o)).concat([PROD]);
     if (!omraader.includes(omraade)) omraade = omraader.includes(hentFane()) ? hentFane() : omraader[0];
     $('sogBoks').hidden = false;
     if (sog.trim()) return renderSog();
+    if (omraade === PROD) return renderProd();
     $('main').innerHTML = leverandorer().map(l => {
       const mine = iOmraade().filter(v => v.leverandor === l);
       const kats = unikke(mine.map(v => v.kategori));
@@ -228,6 +250,7 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
               <div class="name">${esc(v.navn)}</div>
               <div class="meta">${medListe ? `<span class="tag">${esc(v.omraade)}</span>` : ''}<b>${esc(v.enhed)}</b>${v.detalje ? ' · ' + esc(v.detalje) : ''}</div>
               ${v.note ? `<div class="note">${esc(v.note)}</div>` : ''}
+              ${v.premix ? `<div class="note">+ ${v.premix} fl. til premix – lægges oveni</div>` : ''}
             </div>
             <div class="stepper">
               <button class="minus" type="button" aria-label="Færre ${esc(v.navn)}" ${v.antal > 0 ? '' : 'disabled'}>−</button>
@@ -276,6 +299,127 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
     render();
   }
 
+  /* ---------- Produktion: premix og sirup ----------
+   * Man vælger antal kondier premix og liter sirup. Serveren (Produktion.gs) regner om til flasker
+   * hos leverandøren og en indkøbsliste – flaskerne lægges oven i optællingen, når man trykker "Fyld kurv".
+   */
+  const tal = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  function hentProd(efter) {
+    google.script.run
+      .withSuccessHandler(data => { prod = data; opdaterPremix(); efter && efter(); })
+      .withFailureHandler(() => setSync('error', 'Kunne ikke hente produktionen'))
+      .hentProduktion();
+  }
+  // Flasker til premix vises også på varerne i kælderen.
+  function opdaterPremix() {
+    const f = Object.fromEntries((prod ? prod.flasker : []).map(x => [x.id, x.antal]));
+    varer.forEach(v => { v.premix = f[v.id] || 0; });
+  }
+  function renderProd() {
+    $('done').hidden = true;
+    $('foot').hidden = true;
+    renderNav();
+    if (!prod) { $('main').innerHTML = '<div class="empty">Henter opskrifterne …</div>'; return hentProd(() => omraade === PROD && !sog.trim() && renderProd()); }
+    if (!prod.opskrifter.length) { $('main').innerHTML = '<div class="empty">Der er ingen opskrifter endnu. Kør opsaet i Apps Script.</div>'; return; }
+    const gruppe = (id, titel, liste) => `<section id="${id}"><h2>${titel}</h2><ul class="prod-ul">${liste.map(prodRaekke).join('')}</ul></section>`;
+    $('main').innerHTML =
+      gruppe('premix', 'Premix', prod.opskrifter.filter(o => o.maalesI === 'kondi')) +
+      gruppe('sirup', 'Sirup', prod.opskrifter.filter(o => o.maalesI !== 'kondi')) +
+      `<div class="sum" id="bestil"></div>`;
+    renderSum();
+  }
+  function prodRaekke(o) {
+    const kondi = o.maalesI === 'kondi';
+    const ingr = o.ingredienser.filter(i => i.kilde.toLowerCase() !== 'nej').map(i => i.ingrediens).join(', ');
+    return `
+          <li data-opskrift="${esc(o.navn)}" data-on="${o.skalLaves > 0 ? 1 : 0}">
+            <div>
+              <div class="name">${esc(o.navn)}</div>
+              <div class="meta">${kondi ? `<b>kondi</b> · ${esc(ingr)}` : `<b>liter</b> · ${esc(o.note)}`}</div>
+              ${o.manglerOpskrift && !/mangler/i.test(o.note) ? '<div class="note">Opskrift mangler – skriv den i arket "Ingredienser"</div>' : ''}
+              <div class="hint" data-hint></div>
+            </div>
+            <div class="stepper">
+              <button class="minus" type="button" aria-label="Mindre ${esc(o.navn)}" ${o.skalLaves > 0 ? '' : 'disabled'}>−</button>
+              <input type="number" inputmode="decimal" min="0" step="${kondi ? 1 : 0.5}" placeholder="0" class="${kondi ? '' : 'l'}" value="${o.skalLaves > 0 ? o.skalLaves : ''}" aria-label="${kondi ? 'Kondier' : 'Liter'} ${esc(o.navn)}">
+              <button class="plus" type="button" aria-label="Mere ${esc(o.navn)}">+</button>
+            </div>
+          </li>`;
+  }
+  // Oversigten nederst + hints på sirupperne. Tegnes igen, hver gang serveren har regnet.
+  function renderSum() {
+    const boks = $('bestil'); if (!boks || !prod) return;
+    prod.sirup.forEach(x => {
+      const li = document.querySelector(`li[data-opskrift="${CSS.escape(x.navn)}"]`); if (!li) return;
+      const mangler = x.behovL > x.planlagtL, forslag = Math.ceil(x.behovL);
+      li.querySelector('[data-hint]').innerHTML = `Premix skal bruge ${tal(x.behovL)} L` +
+        (mangler ? ` <button type="button" data-saet="${forslag}">Lav ${forslag} L</button>` : ' ✓');
+    });
+    document.querySelectorAll('li[data-opskrift] [data-hint]').forEach(h => { if (!prod.sirup.some(x => x.navn === h.closest('li').dataset.opskrift)) h.innerHTML = ''; });
+    const laves = prod.opskrifter.filter(o => o.skalLaves > 0);
+    if (!laves.length) { boks.innerHTML = '<h2>Skal bestilles</h2><p class="small">Vælg hvad der skal laves ovenfor, så kommer indkøbslisten her.</p>'; renderTabs(); return; }
+    const lev = unikke(prod.flasker.map(f => f.leverandor));
+    const ikkePlanlagt = prod.sirup.filter(x => x.behovL > x.planlagtL);
+    boks.innerHTML = '<h2>Skal bestilles</h2>' +
+      lev.map(l => `<h3>${esc(l)}</h3><ul>${prod.flasker.filter(f => f.leverandor === l).map(f =>
+        `<li><span>${esc(f.navn)} <span class="small">(${tal(f.liter)} L)</span></span><span class="m">${f.antal} fl.</span></li>`).join('')}</ul>
+        <p class="small">Lægges oven i kælderoptællingen, når du trykker <b>Fyld kurv</b> hos ${esc(l)}.</p>`).join('') +
+      (prod.indkoeb.length ? `<h3>Købes andet sted</h3><ul>${prod.indkoeb.map(x =>
+        `<li><span>${esc(x.navn)}</span><span class="m">${tal(x.maengde)} ${esc(x.enhed)}</span></li>`).join('')}</ul>
+        <p class="small">Listen står også i arket "Indkøbsliste".</p>` : '') +
+      (ikkePlanlagt.length ? `<p class="warn">Sirup til premix, som ikke er sat til at blive lavet: ${ikkePlanlagt.map(x => `${esc(x.navn)} (${tal(x.behovL - x.planlagtL)} L mere)`).join(', ')}. Har I den på køl, er det fint.</p>` : '') +
+      (prod.manglerOpskrift.length ? `<p class="warn">Mangler opskrift: ${prod.manglerOpskrift.map(esc).join(', ')} – de er ikke med på indkøbslisten.</p>` : '') +
+      (prod.ukendt.length ? `<p class="warn">Ukendt kilde i arket "Ingredienser": ${prod.ukendt.map(esc).join(', ')}.</p>` : '') +
+      `<div class="knapper"><button class="danger" type="button" id="del">Send indkøbsliste</button><button class="ghost" type="button" id="kopier">Kopiér</button></div>
+       <div class="knapper" id="rydIdle"><button class="ghost" type="button" id="ryd">Ryd produktion</button></div>
+       <div id="rydAsk" hidden><p class="small">Alt sættes til 0. Kælderoptællingen røres ikke.</p>
+         <div class="knapper"><button class="danger" type="button" id="rydJa">Ja, ryd</button><button class="ghost" type="button" id="rydNej">Fortryd</button></div></div>`;
+    renderTabs();
+  }
+  function setProd(navn, m) {
+    const o = prod.opskrifter.find(x => x.navn === navn); if (!o) return;
+    const kondi = o.maalesI === 'kondi';
+    m = Math.max(0, Math.min(kondi ? 20 : 100, kondi ? Math.round(Number(m) || 0) : Math.round((Number(String(m).replace(',', '.')) || 0) * 2) / 2));
+    if (o.skalLaves === m) return;
+    o.skalLaves = m;
+    const li = document.querySelector(`li[data-opskrift="${CSS.escape(navn)}"]`);
+    if (li) {
+      li.dataset.on = m > 0 ? '1' : '0';
+      const inp = li.querySelector('input');
+      if (document.activeElement !== inp) inp.value = m > 0 ? m : '';
+      li.querySelector('.minus').disabled = m <= 0;
+    }
+    clearTimeout(prodPending[navn]);
+    setSync('saving', 'Regner …');
+    prodPending[navn] = setTimeout(() => gemProd(navn, m), 600);
+  }
+  function gemProd(navn, m) {
+    delete prodPending[navn];
+    inFlight++;
+    google.script.run
+      .withSuccessHandler(data => {
+        inFlight--;
+        // Svaret kan være ældre end det, der er tastet siden – behold de lokale tal for opskrifter, der stadig venter.
+        data.opskrifter.forEach(o => { const gl = prod.opskrifter.find(x => x.navn === o.navn); if (gl && prodPending[o.navn]) o.skalLaves = gl.skalLaves; });
+        prod = data; opdaterPremix();
+        if (!inFlight && !Object.keys(prodPending).length) { setSync('saved', 'Gemt'); renderSum(); }
+      })
+      .withFailureHandler(() => {
+        inFlight--;
+        setSync('error', 'Ikke gemt – prøver igen');
+        prodPending[navn] = setTimeout(() => gemProd(navn, prod.opskrifter.find(x => x.navn === navn).skalLaves), 4000);
+      })
+      .gemProduktion(navn, m);
+  }
+  async function delListe(kunKopi) {
+    const tekst = prod && prod.tekst; if (!tekst) return;
+    if (!kunKopi && navigator.share) {
+      try { await navigator.share({ title: 'Indkøb til premix og sirup', text: tekst }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(tekst); setSync('saved', 'Indkøbslisten er kopieret'); }
+    catch (e) { window.prompt('Kopiér indkøbslisten:', tekst); }
+  }
+
   function updateRow(v) {
     const li = document.querySelector(`li[data-id="${CSS.escape(v.id)}"]`);
     if (!li) return;
@@ -317,19 +461,39 @@ footer { margin-top: 28px; display: grid; justify-items: center; gap: 8px; }
 
   function load() {
     google.script.run
-      .withSuccessHandler(data => { varer = data.varer || []; omraader = data.omraader || []; render(); setSync('saved', 'Klar'); })
+      .withSuccessHandler(data => { varer = data.varer || []; omraader = data.omraader || []; render(); setSync('saved', 'Klar'); if (!prod && omraade !== PROD) hentProd(renderTabs); })
       .withFailureHandler(err => { setSync('error', 'Kunne ikke hente listen'); $('main').innerHTML = `<div class="empty">Listen kunne ikke hentes. Genindlæs siden. (${esc(err && err.message)})</div>`; })
       .hentData();
   }
 
   $('main').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'del') return delListe(false);
+    if (b.id === 'kopier') return delListe(true);
+    if (b.id === 'ryd' || b.id === 'rydNej') { $('rydIdle').hidden = b.id === 'ryd'; $('rydAsk').hidden = b.id !== 'ryd'; return; }
+    if (b.id === 'rydJa') {
+      setSync('saving', 'Rydder …');
+      return google.script.run
+        .withSuccessHandler(data => { prod = data; opdaterPremix(); renderProd(); setSync('saved', 'Produktionen er ryddet'); })
+        .withFailureHandler(() => setSync('error', 'Kunne ikke rydde – prøv igen'))
+        .nulstilProduktion();
+    }
+    const pl = b.closest('li[data-opskrift]');
+    if (pl) {
+      const o = prod.opskrifter.find(x => x.navn === pl.dataset.opskrift);
+      if (b.dataset.saet) setProd(o.navn, Number(b.dataset.saet));
+      if (b.classList.contains('plus')) setProd(o.navn, o.skalLaves + 1);
+      if (b.classList.contains('minus')) setProd(o.navn, o.skalLaves - 1);
+      return;
+    }
     const li = b.closest('li'); if (!li) return;
     const v = varer.find(x => x.id === li.dataset.id);
     if (b.classList.contains('plus')) setAntal(v.id, v.antal + 1);
     if (b.classList.contains('minus')) setAntal(v.id, v.antal - 1);
   });
   $('main').addEventListener('change', e => {
+    const pl = e.target.closest('li[data-opskrift]');
+    if (pl && e.target.tagName === 'INPUT') return setProd(pl.dataset.opskrift, e.target.value);
     const li = e.target.closest('li');
     if (li && e.target.tagName === 'INPUT') setAntal(li.dataset.id, e.target.value);
   });

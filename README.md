@@ -32,7 +32,22 @@ Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den s
 | `google/Kode.gs` | Gemmer og henter optællingen (Google Apps Script) |
 | `google/Telefon.html` | Telefonsiden, man tæller på |
 | `google/Multiline.gs` | Multilines favoritlister og varer (én fane pr. liste) |
+| `google/Produktion.gs` | Opskrifter på premix og sirup – regner om til flasker og indkøb |
 | `tampermonkey/fyld-kurv.user.js` | "Fyld kurv"-knappen i Chrome |
+
+## Produktion: premix og sirup
+
+Under **Liste → Produktion → Premix & sirup** på telefonsiden vælger man, hvad der skal laves: antal **kondier** premix og **liter** sirup (fx 10 L rabarbersirup). Nederst står så:
+
+- **Flasker hos Philipson.** De lægges *oven i* kælderoptællingen, når man trykker **Fyld kurv** – personalets antal ændres aldrig, så der altid er flasker til overs. På kælderlisten står det ved varen ("+ 3 fl. til premix").
+- **Købes andet sted** (bær, sukker, juice, mælk). **Send indkøbsliste** åbner telefonens del-menu (SMS, mail …), og listen står også i arket **Indkøbsliste**, så den kan åbnes fra en anden computer.
+- **Sirup, som premix skal bruge.** Ved hver sirup står, hvor meget premixene skal bruge, med en knap til at lave det. Har I siruppen på køl, lader man den bare stå.
+
+Tryk **Ryd produktion**, når der er bestilt.
+
+**Opskrifterne** ligger i arkene **Opskrifter** og **Ingredienser** og kan rettes direkte dér. I "Ingredienser" er `kilde` enten et vare-id fra arket "Varer" (flasker – mængden i liter, flaskestørrelsen læses af "70 cl"), navnet på en anden opskrift (sirup), `køb` (indkøbslisten) eller `nej` (vand). Frugtsirup laves 1:1:1, og vi regner med, at 5 kg + 5 kg + 5 L giver 10 L (`giver_l`) – hellere lidt for meget. `opsaet` lægger kun manglende opskrifter ind; rettelser i arket bevares.
+
+Fersken/hibiscus-sirup og tranebærsirup har ingen opskrift endnu – skriv ingredienserne i "Ingredienser", så kommer de med på indkøbslisten.
 
 ## Opsætning – del 1: telefonsiden (ca. 10 min, gøres én gang)
 
@@ -40,6 +55,7 @@ Varer, der ikke står på favoritlisten, lægger knappen ikke i kurven – den s
 2. I arket: **Udvidelser → Apps Script**.
 3. Slet alt i `Code.gs` og indsæt indholdet af `google/Kode.gs`.
 4. Klik **+** ved "Filer" → **HTML** → navngiv den præcis **Telefon** → indsæt indholdet af `google/Telefon.html`.
+   Opret på samme måde **scriptfilerne** `Multiline` og `Produktion` med indholdet af `google/Multiline.gs` og `google/Produktion.gs`.
 5. Vælg funktionen **opsaet** i menuen øverst og tryk **Kør**. Godkend adgangen til dit eget regneark, når Google spørger.
    Arket får nu fanen "Varer" med Carlsbergs 9 varer.
 6. **Implementer → Ny implementering → (tandhjul) Webapp**
