@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fyld kurv – Madklubben
 // @namespace    madklubben-bestilling
-// @version      0.5.0
+// @version      0.5.1
 // @description  Lægger optællingen fra kælderlisten i kurven hos leverandøren. Bestiller aldrig – det gør du selv.
 // @homepageURL  https://github.com/LasseBlom/madklubben-fyld-kurv
 // @updateURL    https://raw.githubusercontent.com/LasseBlom/madklubben-fyld-kurv/main/tampermonkey/fyld-kurv.user.js
@@ -56,6 +56,11 @@
     'shop.carlsbergdanmark.dk': {
       navn: 'Carlsberg',
       kurvUrl: '/Checkout',
+      // Sessionen kan udløbe, mens siden står åben. Så ligner siden sig selv, men klik når ikke frem.
+      loginSti: /^\/(login|soldtoselection)/i,
+      // Kurven i toppen er eneste bekræftelse. Et ekstra klik efter et langsomt svar ville give dobbelt antal.
+      etForsoeg: true,
+      ventMs: 15000,
       gyldig: erVarenr,
       noegle: v => String(v.varenr),
       // Én række pr. vare: antalsfelt + kurv-knap + "Varenr. 12345" i teksten.
@@ -204,6 +209,15 @@
     return false;
   }
 
+  // Sender webshoppen os til login, hvis vi henter siden igen? Kan det ikke afgøres, går vi videre.
+  async function sessionUdloebet() {
+    if (!lev.loginSti) return false;
+    try {
+      const svar = await fetch(location.href, { credentials: 'same-origin', cache: 'no-store' });
+      return lev.loginSti.test(new URL(svar.url).pathname);
+    } catch (e) { return false; }
+  }
+
   /* ---------- Sikkerhed ----------
    * Scriptet læser kun varenumre og knapper på favoritlisten, og det eneste,
    * det henter udefra, er optællingen (varenavne og antal). Det sender aldrig
@@ -312,6 +326,7 @@
   /* ---------- Trin 2: hent optælling og vis hvad der sker ---------- */
   async function hent(url) {
     vis(`<h2>Henter optællingen …</h2>`);
+    if (await sessionUdloebet()) return visLoggetUd();
     let data;
     try { data = await hentOptaelling(url); }
     catch (e) { return vis(`<h2>Noget gik galt</h2><p class="err">${esc(e.message)}</p><div class="row"><button class="p" id="igen" type="button">Prøv igen</button><button class="g" id="luk" type="button">Luk</button></div><p><button class="link" id="skift" type="button">Skift kælderliste-adresse</button></p>`), bind({ igen: () => hent(url), luk, skift: () => visOpsaetning() }); }
@@ -359,9 +374,18 @@
     Object.entries(handlers).forEach(([id, fn]) => { const el = rod.getElementById(id); if (el) el.onclick = fn; });
   }
 
+  function visLoggetUd() {
+    vis(`<h2>Du er logget ud hos ${esc(lev.navn)}</h2>
+      <p>Sessionen er udløbet, mens siden stod åben. Der er ikke lagt noget i kurven, og optællingen er gemt.</p>
+      <p>Genindlæs siden, vælg kundenummer, hvis den spørger, og tryk <b>Fyld kurv</b> igen.</p>
+      <div class="row"><button class="p" id="genindlaes" type="button">Genindlæs siden</button><button class="g" id="luk" type="button">Luk</button></div>`);
+    bind({ genindlaes: () => location.reload(), luk });
+  }
+
   /* ---------- Trin 3: læg i kurven ---------- */
   async function fyld(varer, omr) {
     rod.getElementById('go').disabled = true;
+    if (await sessionUdloebet()) return visLoggetUd();
     rod.getElementById('luk').disabled = true;
     const raekker = lev.findRaekker();
     const status = (v, s, t) => {
@@ -373,6 +397,7 @@
     const fundne = varer.filter(v => raekker[lev.noegle(v)]);
 
     const ubekraeftet = [];
+    let loggetUd = false;
     if (lev.samlet) {
       // Udfyld alle felter (0 på resten), og tryk én gang på den fælles knap.
       const knap = lev.samletKnap();
@@ -405,17 +430,25 @@
         status(v, '', 'lægger i …');
         r.input.scrollIntoView({ block: 'center' });
         let ok = false;
-        for (let forsoeg = 1; forsoeg <= 2 && !ok; forsoeg++) {
+        for (let forsoeg = 1; forsoeg <= (lev.etForsoeg ? 1 : 2) && !ok; forsoeg++) {
           if (forsoeg === 2) status(v, '', 'prøver igen …');
           saetVaerdi(r.input, v.antal);
           await vent(400);
           const foer = kurvSignatur();
           r.knap.click();
-          ok = await ventPaaBekraeftelse(v, foer, 8000);
+          ok = await ventPaaBekraeftelse(v, foer, lev.ventMs || 8000);
         }
         if (lev.lukPopup) { lev.lukPopup(); await vent(500); }
         if (ok) status(v, 'ok', '✓');
-        else { status(v, 'fejl', 'ikke bekræftet'); ubekraeftet.push(v); }
+        else {
+          status(v, 'fejl', 'ikke bekræftet'); ubekraeftet.push(v);
+          // Døde sessionen undervejs, nytter det ikke at sende resten.
+          if (await sessionUdloebet()) {
+            loggetUd = true;
+            fundne.slice(fundne.indexOf(v) + 1).forEach(x => { status(x, 'fejl', 'ikke sendt'); ubekraeftet.push(x); });
+            break;
+          }
+        }
         await vent(800);
       }
     }
@@ -423,6 +456,7 @@
     const ok = fundne.length - ubekraeftet.length;
     const slut = panel.querySelector('.row');
     slut.outerHTML = `
+      ${loggetUd ? `<p class="err">${esc(lev.navn)} har logget dig ud undervejs, så knappen stoppede. Genindlæs siden, og tjek kurven, før du trykker igen, så intet kommer med to gange.</p>` : ''}
       ${ubekraeftet.length ? `<p class="err">${ubekraeftet.length} ${ubekraeftet.length === 1 ? 'vare' : 'varer'} kunne ikke bekræftes i kurven: ${ubekraeftet.map(v => `${esc(v.antal)} × ${esc(v.navn)}`).join(', ')}. Tjek kurven, og læg dem i selv, hvis de mangler.</p>` : ''}
       ${fejl.length ? `<p class="err">${fejl.length} ${fejl.length === 1 ? 'vare' : 'varer'} kunne ikke findes på favoritlisten: ${fejl.map(v => esc(v.navn)).join(', ')}. Læg dem i kurven selv – eller føj dem til favoritlisten, så klarer knappen dem næste gang.</p>` : ''}
       <p>${ok} ${ok === 1 ? 'vare er' : 'varer er'} bekræftet i kurven. Tjek kurven, og bestil som du plejer.</p>
